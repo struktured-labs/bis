@@ -23,6 +23,14 @@ __pycache__/
 tmp/
 *.tmp
 
+# Build artifacts (keep IPS patches)
+build/extracted/
+build/ghidra/
+build/ghidra-user/
+build/patched/
+*.log
+*.bin
+
 # OS
 .DS_Store
 Thumbs.db
