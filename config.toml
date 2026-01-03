@@ -1,0 +1,30 @@
+# BIS FPS Patch Configuration
+# Mario & Luigi: Bowser's Inside Story + Bowser Jr.'s Journey
+
+[fps]
+# Default FPS limit (60 or 30)
+default = 60
+
+# Standard game FPS (for reference)
+original = 30
+
+# FPS when holding fallback button
+fallback = 30
+
+# Button to hold for fallback FPS
+# Options: A, B, X, Y, L, R, START, SELECT, UP, DOWN, LEFT, RIGHT
+fallback_button = "R"
+
+[game]
+# Title IDs by region
+title_id_usa = "00040000001D1400"
+title_id_eur = "00040000001D1500"
+
+# Game version the patches are tested against
+version = "v1.2"
+
+[notes]
+# Warning: 60 FPS may cause issues with:
+# - Giant battles (use fallback button)
+# - Credits sequence (use fallback button)
+# - Some action command timing

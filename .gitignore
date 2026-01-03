@@ -1,0 +1,28 @@
+# ROM files
+*.3ds
+*.cia
+*.cci
+*.cxi
+*.app
+
+# Environment
+setenv.sh
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Editor
+.vscode/
+.idea/
+
+# Temp
+tmp/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
