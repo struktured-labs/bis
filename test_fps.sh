@@ -29,8 +29,8 @@ Xvfb :99 -screen 0 1280x720x24 &
 XVFB_PID=$!
 sleep 2
 
-# Launch emulator
-QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=nvidia /home/struktured/.local/bin/lime3ds.AppImage "$ROM" &
+# Launch emulator with dummy audio
+SDL_AUDIODRIVER=dummy QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=nvidia /home/struktured/.local/bin/lime3ds.AppImage "$ROM" &
 EMU_PID=$!
 
 echo "Waiting ${TIMEOUT_SEC}s for game to boot..."
