@@ -87,3 +87,26 @@ viable solution for 60fps on this title.
 The code.bin contains mostly Thumb code but the bytes that decode as FPS-related 
 ARM instructions are in data sections. Modifying them corrupts the game's data 
 structures causing immediate crashes.
+
+## Additional Deep Dive Findings (v26 attempt)
+
+### Memory Allocation Analysis
+- Found 12 SVC #0x01 (svcControlMemory) calls
+- None showed FPS-related initialization after allocation
+- STRB instructions near allocation are unrelated to FPS
+
+### Pattern Searches
+- Found STRB.W R7, [R1, #0x76] at 0x1C1592
+- Preceded by MOVS R7, R0 at 0x1C1590
+- Patching to MOVS R7, #0 crashes the game
+- The 0x76 offset is adjacent to target 0x75 but not the actual control
+
+### Code Quality Issues  
+- Most of the binary does not disassemble coherently
+- Thumb disassembly produces invalid instruction sequences
+- This suggests heavy data/code interleaving or obfuscation
+
+### Conclusion
+The game's architecture makes static patching extremely difficult.
+The FPS control uses runtime-allocated memory with values that are
+continuously refreshed, requiring a runtime cheat rather than a ROM patch.
