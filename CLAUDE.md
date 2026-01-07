@@ -1,0 +1,6 @@
+- headless testing only unless you want a human test
+- use sdl dummy audio driver
+- static analysis is not good enough for this problem. you will need to debug dynamically by modding the emulator, with gdb, whatever you can!
+- the goal is an ips patch for 30->60fps change. I know the cheat exists, we are looking for better here
+- Use uv not raw python
+- Make local tmp folder, not /tmp
