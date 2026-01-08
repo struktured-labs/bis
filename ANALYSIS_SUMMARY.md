@@ -2,111 +2,109 @@
 
 ## Summary
 
-After extensive analysis using Ghidra, Capstone, and manual binary inspection, 
-we were **unable to create a working permanent ROM patch** for 60fps on this game.
+After extensive analysis using GDB watchpoints on a custom-built emulator, we successfully identified the FPS control code but encountered issues with LayeredFS patching.
 
 ## Key Findings
 
-### 1. ARM STRB Instructions Found but Are DATA, Not Code
+### 1. FPS Control Location
 
-Found 6 locations that decode as valid ARM STRB instructions with FPS-related offsets:
+Using GDB watchpoints on memory address 0x30000075, we traced the FPS write to:
+- **File**: `AttackMiniGame.cro` (CRO dynamic module in romfs)
+- **Offset in CRO**: 0x090C 
+- **Instruction**: `MOV R2, #1` (0xE3A02001)
+- **Change needed**: `MOV R2, #0` (0xE3A02000)
 
-| Address    | Instruction              | Note |
-|------------|--------------------------|------|
-| 0x013B20   | strbeq r0,[r4,#0x75]    | Crashes when modified |
-| 0x013B24   | strbne r5,[r4,#0x75]    | Crashes when modified |
-| 0x01DB6C   | strbeq r5,[r4,#0x64]    | Crashes when modified |
-| 0x1028E4   | strb r6,[r0,#0x74]      | Crashes when modified |
-| 0x15B0D4   | strb r5,[r4,#0x64]      | Crashes when modified |
-| 0x184BE8   | strbeq r0,[r4,#0x64]    | Crashes when modified |
+### 2. File Structure
 
-**Problem**: These bytes are NOT executable code - they are data that happens to 
-decode as ARM instructions. Any modification crashes the game.
+The CRO file in romfs has a complex structure:
+- **Total size**: 61440 bytes (0xF000)
+- **Header/wrapper**: 0x80 bytes (contains hashes/metadata)
+- **CRO0 section**: Starts at offset 0x80
+- **Module name**: lObject_ (internal name for AttackMiniGame)
 
-### 2. No Thumb Code Found for FPS Access
+### 3. Patch Created
 
-- Searched entire binary for Thumb STRB/LDRB to offsets 0x64/0x65/0x74/0x75
-- Found 0 matches
-- The actual FPS control code uses indirect addressing we cannot trace statically
+**Location**: `patches/60fps_v31_layeredfs/AttackMiniGame.cro`
+- Patched byte at offset 0x098C (0x80 wrapper + 0x090C)
+- Changes: 0x01 → 0x00
 
-### 3. Float Constants Found but Not Patchable
+### 4. Issues Encountered
 
-Found float 30.0 (0x41F00000) at 9 locations, including one referenced by code:
-- 0x0C6EE4: Referenced by LDR at 0x0C6BAC
+1. **Emulator fails in headless mode** - Qt plugin errors, exits immediately
+2. **Game freezes with mod installed** - Both Citra and Azahar freeze/crash
+3. **Possible causes**:
+   - CRO has integrity checks we haven't bypassed
+   - The 0x80-byte header contains hashes that need recalculation
+   - LayeredFS might not work for CRO files
+   - AttackMiniGame.cro might only load during specific scenarios
 
-Patching 30.0 → 60.0 also crashes the game.
+## Working Alternative: CTRPF Runtime Cheat
 
-### 4. CTRPF Cheat Mechanism
+The CTRPF cheat code (which we analyzed) works because it continuously overwrites memory at runtime:
 
-The working CTRPF cheat operates at RUNTIME:
 ```
-D3000000 30000000   # Set base to LINEAR heap (0x30000000)
-50000074 01000101   # Check if pattern exists
-20000075 00000000   # Write 0x00 to enable 60fps
+D3000000 30000000
+50000074 01000101
+20000075 00000000
 ```
 
-The cheat works by continuously overwriting runtime memory, which we cannot 
-replicate with a static ROM patch.
+This bypasses the CRO entirely by directly modifying the FPS byte in LINEAR heap.
 
-## Tested Patches (All Failed)
+## Recommendations
 
-| Version | Approach | Result |
-|---------|----------|--------|
-| v21     | Make STRB unconditional + NOP | Crash |
-| v22     | Selective STRB changes | Crash |
-| v23     | Single instruction change | Crash |
-| v24     | NOP all FPS STRB | Crash |
-| v25     | Float 30.0 → 60.0 | Crash |
+### Option 1: Use CTRPF Cheat (Recommended)
+The runtime cheat is proven to work and doesn't require ROM modification.
 
-## Recommendation
+### Option 2: Investigate Hash Recalculation
+The 0x80-byte header likely contains SHA256 hashes that need updating:
+- Hash fields at: 0x00, 0x20, 0x40, 0x60
+- Need to determine what each hash covers
+- Recalculate after patching
 
-**Continue using the CTRPF runtime cheat code.** The game's architecture does not 
-allow for a simple static ROM patch to change FPS. The FPS control:
+### Option 3: Try Different Emulator Mods
+Test if other emulators handle LayeredFS CRO replacement differently:
+- Citra Canary
+- Lime3DS latest
+- Different mod folder structures
 
-1. Uses dynamically-allocated memory at runtime
-2. Is continuously reset every frame
-3. Cannot be traced to a single code location
-
-The CTRPF cheat is specifically designed for this scenario and remains the only 
-viable solution for 60fps on this title.
+### Option 4: ROM Rebuild
+Instead of LayeredFS:
+1. Extract full romfs with 3dstool
+2. Replace AttackMiniGame.cro in extracted romfs
+3. Rebuild romfs
+4. Rebuild ROM with modified romfs
 
 ## Files Generated
 
-- `patches/60fps_v21.ips` through `v25.ips` - All crash
-- `ghidra_analysis/*.py` - Analysis scripts
-- Various log files documenting the investigation
+- `patches/60fps_v31_layeredfs/AttackMiniGame.cro` - Patched CRO (60KB)
+- `patches/60fps_v31_layeredfs/README.md` - Installation instructions
+- `tmp/fps_module.cro` - Original CRO extracted from romfs
+- `tmp/AttackMiniGame_patched.cro` - Patched version
+- Custom emulator build at `build/emulator/Lime3DS/`
 
 ## Technical Details
 
-- Binary: code.bin (1,914,892 bytes)
-- Processor: ARM v7, mixed ARM/Thumb code
-- 4,685 Thumb functions identified
-- 4 SVC #0x25 (WaitSynchronization) calls found
-- LINEAR heap base: 0x30000000
+### GDB Watchpoint Results
+```
+PC: 0x0026DB0C
+LR: 0x002849EC
+R2: 0x00000001 (FPS flag)
+Memory 0x30000075: 0x01 (30fps)
+```
 
-The code.bin contains mostly Thumb code but the bytes that decode as FPS-related 
-ARM instructions are in data sections. Modifying them corrupts the game's data 
-structures causing immediate crashes.
+### CRO Structure
+```
+Offset  Content
+0x0000  Header/wrapper (0x80 bytes)
+0x0080  CRO0 magic
+0x098C  Patched instruction (MOV R2, #0)
+```
 
-## Additional Deep Dive Findings (v26 attempt)
+## Conclusion
 
-### Memory Allocation Analysis
-- Found 12 SVC #0x01 (svcControlMemory) calls
-- None showed FPS-related initialization after allocation
-- STRB instructions near allocation are unrelated to FPS
+We successfully identified the exact code location for FPS control through dynamic analysis. The LayeredFS patch may not work due to integrity checks, but the findings enable:
+1. Continued use of CTRPF runtime cheat
+2. Future ROM rebuild with patched romfs
+3. Better understanding of game's FPS architecture
 
-### Pattern Searches
-- Found STRB.W R7, [R1, #0x76] at 0x1C1592
-- Preceded by MOVS R7, R0 at 0x1C1590
-- Patching to MOVS R7, #0 crashes the game
-- The 0x76 offset is adjacent to target 0x75 but not the actual control
-
-### Code Quality Issues  
-- Most of the binary does not disassemble coherently
-- Thumb disassembly produces invalid instruction sequences
-- This suggests heavy data/code interleaving or obfuscation
-
-### Conclusion
-The game's architecture makes static patching extremely difficult.
-The FPS control uses runtime-allocated memory with values that are
-continuously refreshed, requiring a runtime cheat rather than a ROM patch.
+🤖 Generated with Claude Code
