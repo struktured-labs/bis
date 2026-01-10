@@ -63,20 +63,26 @@ This is the **gold standard** test that the expert demanded:
 
 ## 🚀 Quick Start
 
-**If you want to verify the patches work:**
+### ⚠️ Known Issue: Headless Mode Freezing
+
+This game freezes when run in true headless mode (Xvfb/offscreen). The emulator window **must** be shown on DISPLAY=:0.
+
+**Working minimal test (20 seconds, shows window):**
 ```bash
 cd /home/struktured/projects/bis
-./build/test_fps_complete.sh
+
+# Test original ROM
+./build/test_fps_minimal.sh "Mario & Luigi - Bowser's Inside Story + Bowser Jr.'s Journey (USA).3ds" "original" 20
+
+# Test patched ROM
+./build/test_fps_minimal.sh "build/Mario_Luigi_BIS_60fps_FINAL.3ds" "patched" 20
 ```
 
-**If you just want to test the clean emulator first:**
+You can minimize the window during testing. Results will show average FPS.
+
+**If you want to test the clean emulator manually:**
 ```bash
 ./build/test_clean_no_mods.sh
-```
-
-**If you want to test the patched ROM manually:**
-```bash
-./build/test_60fps_FINAL.sh
 ```
 
 ## 📂 Important Files
