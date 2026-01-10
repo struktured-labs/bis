@@ -26,13 +26,32 @@ echo "Duration: ${DURATION}s"
 echo "Output: $OUTPUT_LOG"
 echo ""
 
+# Setup headless display with Xvfb if not already running
+if ! pgrep Xvfb > /dev/null; then
+    echo "Starting Xvfb for headless operation..."
+    Xvfb :99 -screen 0 1024x768x24 -ac &
+    XVFB_PID=$!
+    sleep 2
+    echo "Xvfb started (PID: $XVFB_PID)"
+else
+    echo "Xvfb already running"
+    XVFB_PID=""
+fi
+
+echo ""
+
 # Run emulator headless with FPS logging
-timeout ${DURATION}s env DISPLAY=:0 \
+timeout ${DURATION}s env DISPLAY=:99 \
     MESA_GL_VERSION_OVERRIDE=4.6 \
     __GLX_VENDOR_LIBRARY_NAME=nvidia \
-    QT_QPA_PLATFORM=offscreen \
+    LIBGL_ALWAYS_SOFTWARE=1 \
     SDL_AUDIODRIVER=dummy \
     "$EMULATOR" "$ROM_PATH" 2>&1 | tee "$OUTPUT_LOG"
+
+# Kill Xvfb if we started it
+if [ -n "$XVFB_PID" ]; then
+    kill $XVFB_PID 2>/dev/null || true
+fi
 
 echo ""
 echo "=== FPS Analysis ==="
