@@ -10,7 +10,7 @@ cd /home/struktured/projects/bis
 # Define paths
 ORIGINAL_ROM="Mario & Luigi - Bowser's Inside Story + Bowser Jr.'s Journey (USA).3ds"
 PATCHED_ROM="build/Mario_Luigi_BIS_60fps_FINAL.3ds"
-MEASURE_SCRIPT="tmp/measure_fps.sh"
+MEASURE_SCRIPT="build/measure_fps.sh"
 TEST_DURATION=60  # Run each test for 60 seconds
 
 echo "╔════════════════════════════════════════════════════════════════╗"

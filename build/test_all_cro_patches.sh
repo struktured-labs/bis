@@ -9,7 +9,7 @@ ls ~/.local/share/azahar-emu/load/mods/00040000001D1400/romfs/*.cro 2>/dev/null 
 echo ""
 
 # Use original ROM (patches applied via LayeredFS)
-ROM="Mario & Luigi - Bowser's Inside Story + Bowser Jr.'s Journey (USA).3ds"
+ROM=${ROM:-"Mario & Luigi - Bowser's Inside Story + Bowser Jr.'s Journey (USA).3ds"}
 EMULATOR="/home/struktured/projects/bis/build/emulator/Lime3DS/build/bin/Release/azahar"
 
 echo "ROM: $ROM"
@@ -25,10 +25,7 @@ echo "  - Attack minigames"
 echo ""
 echo "Press Ctrl+C to exit when done testing"
 echo ""
+export DISPLAY=:0 QT_QPA_PLATFORM=xcb __GLX_VENDOR_LIBRARY_NAME=nvidia
 
 # Run with display and required OpenGL overrides
-env DISPLAY=:0 \
-    MESA_GL_VERSION_OVERRIDE=4.6 \
-    __GLX_VENDOR_LIBRARY_NAME=nvidia \
-    SDL_AUDIODRIVER=pulse \
-    "$EMULATOR" "$ROM"
+"$EMULATOR" "$ROM"
