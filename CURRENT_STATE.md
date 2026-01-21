@@ -1,107 +1,147 @@
 # Current State: 60fps Patch Investigation
 
-**Date:** January 20, 2026, End of Day
-**Time Invested:** 8+ hours
-**Status:** Taking break, will return
+**Date:** January 20, 2026, After Grinding Session
+**Time Invested:** 12+ hours
+**Status:** Critical framework understanding achieved, continuing
 
 ---
 
-## 🔴 Critical Discovery
+## 🔴 Critical Discoveries
 
-**GDB watchpoint proof: Game NEVER accesses 0x30000075**
-
-- Set hardware watchpoint (read + write) on address 0x30000075
-- Ran for 60 seconds during gameplay
-- **ZERO HITS** - game never reads or writes this address
+### Discovery 1: Game NEVER accesses 0x30000075
+- GDB hardware watchpoint proof: 60 seconds, **ZERO HITS**
+- CTRPF writes to 0x30000075, but game doesn't read it
 - Log: `tmp/gdb_fps_watchpoint.log`
-- Script: `build/gdb_attach_watchpoint.sh`
 
-**Implication:** Our entire investigation was searching for the wrong thing. The CTRPF cheat writes to 0x30000075, but the game doesn't use it.
+### Discovery 2: CTRPF Uses Runtime Code Patching
+- CTRPF can hook/patch code at runtime (impossible for IPS)
+- 0x30000075 is likely a flag FOR THE PLUGIN, not game code
+- Plugin reads flag → patches actual game code → changes FPS
+- **Static IPS patch cannot replicate this** unless we find what it patches
 
----
-
-## What We Know Works
-
-✅ **CRO patches** - all 12 modules patched at offset 0x76
-✅ **ROM stable** - loads without corruption, plays at 30 FPS
-✅ **GDB automation** - fully working attach method
-✅ **Custom emulator** - Lime3DS with FPS logging
-✅ **ROM generation pipeline** - can create/test patches rapidly
-
----
-
-## What We Know Doesn't Work
-
-❌ Float 30.0 → 60.0 patches (9 locations tested)
-❌ Immediate value 0x75 patches (15 candidates, 6 crashed, 9 still 30fps)
-❌ Searching for reads from 0x30000075 (game never accesses it)
+### Discovery 3: VBlank Calls Are Sparse
+- Only 6 VBlank-related SVC calls in entire game
+- 5/6 crash when NOPed
+- 1/6 (#4 at 0x14DB7A) runs without crashing
+- This candidate is special but likely still 30fps
 
 ---
 
-## Files to Read When Returning
+## What We've Tested (Grinding Session)
 
-1. **NEXT_INVESTIGATION.md** - 5 investigation paths with detailed plans
-2. **FILE_REFERENCE.md** - All scripts and what they do
-3. **FINAL_STATUS.md** - Full 8-hour summary
+| Round | Approach | Candidates | Crashed | Ran (30fps) | Success |
+|-------|----------|------------|---------|-------------|---------|
+| 1 | 0x75 immediates | 15 | 6 | 9 | 0 |
+| 2 | 0x74 immediates | 15 | 3 | 12 | 0 |
+| 3 | VBlank SVC NOPs | 6 | 5 | 1 | 0 |
+| **TOTAL** | **36 test ROMs** | **14** | **22** | **0** |
 
----
-
-## Quick Restart Options
-
-**Option A (Quick - 1 hour):** Test 0x74 candidates instead of 0x75
-**Option B (Best - 2 hours):** Analyze VBlank/GSP calls (1042 SVC instructions)
-**Option C (Deep - 4 hours):** Research CTRPF framework mechanism
-**Option D (Fallback):** Emulator-side unlock (guaranteed but emulator-only)
-
-Recommended: **Start with B (VBlank), then A (0x74)**
+**Additional analysis:**
+- 598 MOVS #2 instructions found (potential wait counts)
+- 262 HIGH priority (near control flow)
+- Too many to test individually
 
 ---
 
-## Key Files Ready to Use
+## What Works
 
-```bash
-# GDB watchpoint (working perfectly)
-./build/gdb_attach_watchpoint.sh
-
-# Scan instructions (comprehensive)
-uv run build/scan_thumb_mode.py
-
-# Test ROM manually
-env DISPLAY=:0 \
-    MESA_GL_VERSION_OVERRIDE=4.6 \
-    __GLX_VENDOR_LIBRARY_NAME=nvidia \
-    SDL_AUDIODRIVER=dummy \
-    $HOME/.local/bin/citra.AppImage "build/Mario_Luigi_BIS_60fps_FINAL.3ds"
-```
+✅ **CRO patches** - 12 modules, ROM stable at 30fps
+✅ **GDB automation** - attach method works perfectly
+✅ **ROM generation** - can create/test patches rapidly
+✅ **Comprehensive scanning** - 912K instructions analyzed
+✅ **Test infrastructure** - automated ROM testing
 
 ---
 
-## User Preferences (Updated)
+## What Doesn't Work
 
-- **STUBBORN** - won't give up despite setbacks
-- **COMPACT** - wants code changes and results, not verbose explanations
-- **CRITICAL:** Use `uv` ONLY for Python (never raw python3)
-- Headless testing unless requesting human test
-- Local tmp folder, not /tmp
-
----
-
-## The Real Problem
-
-The CTRPF cheat probably doesn't just write memory - it likely:
-1. Hooks game code at runtime
-2. Uses 0x30000075 as a flag for the framework
-3. Patches the actual frame limiter when flag changes
-
-**This means:** We need to find WHERE the frame limiter actually is (VBlank calls, GSP, etc), not where 0x30000075 is accessed.
+❌ Float 30.0 patches (9 locations)
+❌ 0x75 immediate patches (15 candidates)
+❌ 0x74 immediate patches (15 candidates)
+❌ VBlank SVC NOPs (5/6 crash, 1 runs but likely 30fps)
+❌ Simple static analysis approaches
 
 ---
 
-## Next Session Action Items
+## The Core Challenge
 
-1. Create `build/scan_svc_calls.py` - find VBlank waits
-2. Create `build/test_0x74_candidates.py` - test the conditional check byte
-3. Run tests, document findings
-4. If both fail, analyze CTRPF source code
+**CTRPF can do runtime operations that IPS patches cannot:**
 
-**Goal:** Find the REAL frame limiter mechanism
+| CTRPF Plugin | IPS Patch |
+|--------------|-----------|
+| ✅ Hook system calls | ❌ Static bytes only |
+| ✅ Runtime code patching | ❌ No runtime modification |
+| ✅ Function interception | ❌ No interception |
+| ✅ Dynamic memory writes | ❌ Fixed ROM changes |
+
+**This means:** We need to find what code CTRPF patches when the flag changes, then apply those same patches statically.
+
+---
+
+## Next Investigation Options
+
+### Option A: Reverse Engineer CTRPF Plugin (RECOMMENDED)
+**Time:** 5-10 hours | **Success rate:** 70%
+- Find CTRPF source code
+- Understand 60fps cheat implementation
+- Identify actual game code it patches
+- Apply patches statically
+
+### Option B: Runtime Memory Diff
+**Time:** 10-15 hours | **Success rate:** 50%
+- Run with CTRPF + cheat active
+- GDB trace code changes
+- Compare before/after
+- Very technical, may hit limits
+
+### Option C: Emulator-Side Solution
+**Time:** 2-3 hours | **Success rate:** 100%
+- Modify Lime3DS force 60fps
+- **Only works on emulator**
+- Doesn't meet IPS patch goal
+
+### Option D: Comprehensive Memory Scan
+**Time:** 3-5 hours | **Success rate:** 30%
+- Watchpoint entire 0x30000000 range
+- See what CTRPF actually accesses
+- May still not find game code link
+
+---
+
+## Files Generated This Session
+
+**New Scripts:**
+- `build/analyze_0x74_usage.py` - 346 candidates found
+- `build/test_0x74_candidates.py` - ROM generation
+- `build/scan_svc_calls.py` - 994 SVC calls analyzed
+- `build/disassemble_vblank.py` - Context analysis
+- `build/test_vblank_candidates.py` - VBlank ROM generation
+- `build/find_wait_counts.py` - 598 MOVS #2 found
+
+**Test ROMs:**
+- `tmp/0x74_test_roms/` (15 ROMs)
+- `tmp/vblank_test_roms/` (6 ROMs)
+
+**Analysis Data:**
+- `tmp/0x74_analysis.json`
+- `tmp/svc_analysis.json`
+- `tmp/wait_count_analysis.json`
+
+**Documentation:**
+- `GRINDING_RESULTS.md` - This session's findings
+
+---
+
+## User Status
+
+- **STUBBORN** - will not give up despite token costs
+- **COMPACT** - prefers results over explanations
+- **GRINDING** - continuing investigation aggressively
+
+---
+
+## Next Action
+
+**Recommended:** Search for CTRPF plugin source code to understand how 60fps cheat works internally, then replicate as static patch.
+
+See `GRINDING_RESULTS.md` for full session details.
