@@ -109,11 +109,12 @@ echo ""
 # Copy partition0_v2.cxi to use as partition0
 cp ${WORK_DIR}/partition0_v2.cxi ${WORK_DIR}/partition0.cxi
 
-# Build final ROM
+# Build final ROM with all partitions
 3dstool -cvtf 3ds build/Mario_Luigi_BIS_60fps_v2.3ds \
     --header build/extracted/ncsd_header.bin \
     -0 ${WORK_DIR}/partition0.cxi \
     -1 build/extracted/partition1.cfa \
+    -6 build/extracted/partition6.cfa \
     -7 build/extracted/partition7.cfa
 
 if [ $? -eq 0 ]; then

@@ -4,60 +4,42 @@
 - the goal is an ips patch for 30->60fps change. I know the cheat exists, we are looking for better here
 - **CRITICAL: Use uv ONLY for all Python operations - NEVER use raw python3, pip, or python commands**
 - Make local tmp folder, not /tmp
+- **NEVER ask user to manually test/capture things. AUTOMATE IT. Build infrastructure for permanent automated testing. User should enable you to test, not do testing themselves.**
 - **User is STUBBORN** - will not give up despite token costs or setbacks. Come back to hard problems.
 - **User prefers COMPACT updates** - focus on code changes and test results, not verbose explanations
 
-## Latest Findings (Jan 20, 2026)
+## SOLVED: 60fps IPS Patch (Feb 16, 2026)
 
-### 🔴 CRITICAL DISCOVERY: GDB Watchpoint Proof (8+ hours investigation)
+### Working Patch: `patches/60fps.ips` (26 bytes)
 
-**THE GAME NEVER ACCESSES ADDRESS 0x30000075**
+**Two ARM instruction patches in decompressed code.bin:**
 
-- Hardware watchpoint set on 0x30000075 (read + write)
-- Ran for 60 seconds during gameplay
-- **ZERO HITS** - game code never reads or writes this address
-- Proof: `tmp/gdb_fps_watchpoint.log` and `build/gdb_attach_watchpoint.sh`
+| File Offset | Virtual Addr | Original | Patched | Description |
+|-------------|-------------|----------|---------|-------------|
+| 0x03E918 | 0x13E918 | `E5D4103D` LDRB R1,[R4,#0x3D] | `E3A01000` MOV R1,#0 | Main frame loop FPS check |
+| 0x180A84 | 0x280A84 | `E5D4003D` LDRB R0,[R4,#0x3D] | `E3A00000` MOV R0,#0 | Init-time FPS check |
 
-**What This Means:**
-- CTRPF cheat writes to 0x30000075, but game doesn't read it
-- The cheat likely hooks/patches game code at RUNTIME (not just memory writes)
-- 0x30000075 may be a flag for CTRPF framework itself to trigger patches
-- Our 8 hours of static analysis searching for 0x75 reads was wrong approach
+**Result:** 29.8 FPS -> 59.7 FPS (verified 4 automated headless runs)
 
-**Address 0x30000075 is in PLUGIN MEMORY (0x30000000-0x30010000)**
-- Runtime-allocated by Luma3DS/CTRPF framework
-- NOT in ROM - cannot be directly patched in game files
+**How it works:** Game stores FPS mode byte at heap struct offset +0x3D (address 0x320DA3AD at runtime). Value 0x01 = 30fps, 0x00 = 60fps. The patch replaces both LDRB reads with MOV #0, forcing 60fps mode regardless of the stored value.
 
-### What We Tried (All Failed)
+**IPS patch applies via emulator mod system:** Place at `~/.local/share/azahar-emu/load/mods/00040000001D1400/exefs/code.ips`
 
-**Phase 1: CRO Module Patches** ✅ Stable but 30 FPS
-- Patched all 12 CRO modules at offset 0x76
-- ROM loads perfectly, no crashes
-- Still 30 FPS (main code frame limiter overrides)
+### How We Found It (Investigation Chain)
+1. SVC instrumentation -> game uses WaitSync1 on VBlank for frame timing
+2. VBlank patches break game -> can't bypass sync directly
+3. Cheat engine instrumentation -> only ONE byte write matters (0x320DA3AD = 0x00)
+4. Disabled dynarmic fastmem + memory watchpoints -> found reader PCs
+5. Disassembled readers -> both LDRB from struct+0x3D
+6. IPS patch: replace LDRB with MOV #0 -> forces 60fps
 
-**Phase 2: Float Constant Patches** ❌ Failed
-- Found 9 float 30.0 constants, created 8 test ROM combinations
-- ALL still 30 FPS - these are not the frame limiter
+### Testing Infrastructure
+- Custom Lime3DS with FPS CSV logging (build/emulator/)
+- `build/test_60fps_patch.sh` - A/B headless FPS verification
+- Headless stack: `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe QT_QPA_PLATFORM=xcb SDL_AUDIODRIVER=dummy`
 
-**Phase 3: LDRB Scanner (0x75 immediate)** ❌ Failed
-- Scanned 912,210 Thumb instructions
-- Found 371 uses of immediate 0x75
-- Tested 15 high-priority candidates
-- Results: 6 crashed, 9 ran at 30 FPS, **0 achieved 60 FPS**
-- Crash analysis: All used 0x75 for struct offsets, not FPS control
-
-**Phase 4: GDB Watchpoint** ✅ Working, Revealed Truth
-- `build/gdb_attach_watchpoint.sh` - fully automated
-- Proved game never accesses 0x30000075
-
-### Infrastructure Built
-- Custom Lime3DS with FPS logging (working)
-- Automated ROM generation pipeline (working)
-- GDB attach methodology (working)
-- Comprehensive analysis scripts (see `build/scan_*.py`, `build/analyze_*.py`)
-
-### Next Approaches (When We Return)
-1. **Analyze CTRPF framework code** - understand how runtime hooking works
-2. **Search VBlank/GSP calls** - 1042 SVC instructions found, analyze for frame limiting
-3. **Try 0x74 candidates** - CTRPF checks this before 0x75, maybe it's the real control
-4. **Emulator-side unlock** - Modify Citra to force 60fps (emulator-only solution)
+### IPS Format Reference
+- Header: `PATCH` (5 bytes)
+- Records: 3-byte BE offset + 2-byte BE size + LE data
+- Footer: `EOF` (3 bytes)
+- Offsets are into decompressed code.bin (vaddr = offset + 0x100000)

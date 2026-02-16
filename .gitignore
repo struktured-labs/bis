@@ -1,5 +1,6 @@
 # ROM files
 *.3ds
+*.3DS
 *.cia
 *.cci
 *.cxi
@@ -25,11 +26,32 @@ tmp/
 
 # Build artifacts (keep IPS patches)
 build/extracted/
+build/extracted_clean/
+build/v3_extract/
 build/ghidra/
 build/ghidra-user/
 build/patched/
+build/emulator/
 *.log
 *.bin
+*.txt
+
+# Analysis output
+ghidra_analysis/project/
+ghidra_analysis/analysis_output.txt
+out
+out/
+test.sh
+
+# Untracked docs (session artifacts)
+CHEAT_CODE_ANALYSIS.md
+INVESTIGATION_COMPLETE.md
+MEMORY_DIFF_PLAN.md
+REAL_3DS_MEMORY_PLAN.md
+FINAL_ANALYSIS.md
+
+# ROM collection
+roms/
 
 # OS
 .DS_Store
