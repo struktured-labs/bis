@@ -8,11 +8,9 @@
 - **User is STUBBORN** - will not give up despite token costs or setbacks. Come back to hard problems.
 - **User prefers COMPACT updates** - focus on code changes and test results, not verbose explanations
 
-## SOLVED: 60fps IPS Patch (Feb 16, 2026)
+## SOLVED: 60fps IPS Patch
 
-### Working Patch: `patches/60fps.ips` (26 bytes)
-
-**Two ARM instruction patches in decompressed code.bin:**
+### v1.0 Patch: `patches/60fps.ips` (26 bytes)
 
 | File Offset | Virtual Addr | Original | Patched | Description |
 |-------------|-------------|----------|---------|-------------|
@@ -20,6 +18,15 @@
 | 0x180A84 | 0x280A84 | `E5D4003D` LDRB R0,[R4,#0x3D] | `E3A00000` MOV R0,#0 | Init-time FPS check |
 
 **Result:** 29.8 FPS -> 59.7 FPS (verified 4 automated headless runs)
+
+### v2.2 Patch: `patches/60fps_v22.ips` (26 bytes)
+
+| File Offset | Virtual Addr | Original | Patched | Description |
+|-------------|-------------|----------|---------|-------------|
+| 0x03E8E8 | 0x13E8E8 | `E5D4103D` LDRB R1,[R4,#0x3D] | `E3A01000` MOV R1,#0 | Main frame loop FPS check |
+| 0x180A5C | 0x280A5C | `E5D4003D` LDRB R0,[R4,#0x3D] | `E3A00000` MOV R0,#0 | Init-time FPS check |
+
+**Result:** 28.7 FPS -> 57.6 FPS (verified automated headless A/B test)
 
 **How it works:** Game stores FPS mode byte at heap struct offset +0x3D (address 0x320DA3AD at runtime). Value 0x01 = 30fps, 0x00 = 60fps. The patch replaces both LDRB reads with MOV #0, forcing 60fps mode regardless of the stored value.
 
