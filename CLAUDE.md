@@ -19,7 +19,8 @@
 
 **Result:** 29.8 FPS -> 59.7 FPS (verified 4 automated headless runs)
 
-### v2.2 Patch: `patches/60fps_v22.ips` (26 bytes)
+### v1.2 (latest update) Patch: `patches/60fps_update_v1.2.ips` (26 bytes)
+Note: CIA/TMD internal version is "v2080" (2.2), but Nintendo's official game version is 1.2.
 
 | File Offset | Virtual Addr | Original | Patched | Description |
 |-------------|-------------|----------|---------|-------------|
