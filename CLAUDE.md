@@ -95,42 +95,10 @@ Install: `~/.local/share/azahar-emu/load/mods/00040000001D1400/romfs/RO/HugeBatt
 9. Found 31 total +0x3D instructions in code.bin -> v3 patches all relevant readers AND writers
 10. Found HugeBattle.cro has own 30fps writer (0x0efc60) -> patched CRO directly
 
-### Halfspeed Patch: `patches/60fps_halfspeed_v1.2.ips` (44 bytes, 4 records)
-
-**60fps rendering + 30Hz game logic** - correct game speed at 60fps. Self-contained IPS patch, no emulator mods.
-
-| File Offset | Original | Patched | Description |
-|-------------|----------|---------|-------------|
-| 0x03E8E8 | LDRB R1,[R4,#0x3D] | MOV R1,#0 | Force 60fps mode (main) |
-| 0x180A5C | LDRB R0,[R4,#0x3D] | MOV R0,#0 | Force 60fps mode (init) |
-| 0x03DF7C | CPY R10,R5 | B 0x3E900 | Branch to trampoline |
-| 0x03E900 | (dead code) | 8-instr trampoline | Self-contained toggle + skip |
-
-**Trampoline** (in dead mode-2 code space 0x3E900-0x3E91C):
-```
-LDRB R0,[R4,#0x48]   ; load toggle
-EOR R0,R0,#1          ; flip 0↔1
-STRB R0,[R4,#0x48]   ; store
-CMP R0,#0             ; check
-BEQ skip_logic        ; if 0, skip
-CPY R10,R5            ; replicate replaced instruction
-B 0x3DF80             ; run full game logic (1060 bytes)
-skip_logic:
-B 0x3E3A4             ; skip entire game logic block
-```
-
-**Result:** 29.8-30.1 game fps, 59.6-60.1 system fps (verified automated headless test)
-**Gameplay verified:** Dialogue, character animation, NPC interaction all working correctly in new game intro (Toad house scene). Game runs at correct 1x speed.
-
-**Key insight:** Previous v1 approach skipped only vtable[0x1C]/[0x20] (40 bytes) - those aren't the real game logic. The REAL frame-skip (mode 2) jumps from 0x3DF74 to 0x3E3A4, skipping the full 1060-byte game logic block. The halfspeed patch replicates this skip on alternating frames.
-
-Generator: `build/make_halfspeed_patch.py`
-
 ### Testing Infrastructure
 - Custom Lime3DS with FPS CSV logging (build/emulator/)
 - `build/test_60fps_patch.sh` - A/B headless FPS verification
 - `build/test_v3_patch.sh` - v3 + CRO patch test (3 min, PASSED)
-- `build/test_skip_counter.sh` - halfspeed trampoline verification
 - Headless stack: `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe QT_QPA_PLATFORM=xcb SDL_AUDIODRIVER=dummy`
 
 ### IPS Format Reference
