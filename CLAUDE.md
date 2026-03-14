@@ -1,4 +1,5 @@
 - headless testing only unless you want a human test
+- **WAYLAND LAUNCH RULE**: NEVER launch emulator with OpenGL on Wayland. Before ANY human-play launch: set `graphics_api=2` (Vulkan) + `graphics_api\default=false` in qt-config.ini, use `QT_QPA_PLATFORM=wayland`. OpenGL shared context DOES NOT WORK on Wayland/KDE.
 - **AUDIO: ALWAYS use `SDL_AUDIODRIVER=dummy` AND set `volume=0` + `volume\default=false` in `~/.config/azahar-emu/qt-config.ini` before ANY emulator launch. The config resets itself so check EVERY time.**
 - static analysis is not good enough for this problem. you will need to debug dynamically by modding the emulator, with gdb, whatever you can!
 - the goal is an ips patch for 30->60fps change. I know the cheat exists, we are looking for better here
@@ -100,6 +101,34 @@ Install: `~/.local/share/azahar-emu/load/mods/00040000001D1400/romfs/RO/HugeBatt
 - `build/test_60fps_patch.sh` - A/B headless FPS verification
 - `build/test_v3_patch.sh` - v3 + CRO patch test (3 min, PASSED)
 - Headless stack: `DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe QT_QPA_PLATFORM=xcb SDL_AUDIODRIVER=dummy`
+
+### QTE Timing Patch: `patches/60fps_qte_v1.2.ips` (35 bytes, 3 records)
+
+60fps + QTE key-hold window doubling. Extends the base 60fps patch with timing compensation.
+
+| File Offset | Virtual Addr | Original | Patched | Description |
+|-------------|-------------|----------|---------|-------------|
+| 0x03E8E8 | 0x13E8E8 | `E5D4103D` LDRB R1,[R4,#0x3D] | `E3A01000` MOV R1,#0 | Main frame loop FPS check |
+| 0x180A5C | 0x280A5C | `E5D4003D` LDRB R0,[R4,#0x3D] | `E3A00000` MOV R0,#0 | Init-time FPS check |
+| 0x192A74 | 0x292A74 | `EEB08A40` VMOV.F32 S16,S0 | `EE308A00` VADD.F32 S16,S0,S0 | Double QTE key-hold window |
+
+**How it works:** `setKeyContFrmEndTime(float)` at vaddr 0x292A5C saves the float argument in S16 then dispatches to subscriber functions via vtable. By replacing VMOV with VADD (S0+S0), the value is doubled before dispatch, compensating for 60fps running QTE countdown timers at 2x speed.
+
+**Romfs CSV mod** (`build/make_qte_timing_mod.py`): Also doubles 93 timing-related float parameters across 8 battle CSV files in `HB/param/`. Install at `~/.local/share/azahar-emu/load/mods/00040000001D1400/romfs/HB/param/`.
+
+Generator: `build/make_qte_patch.py`
+
+### CRS Export Table (static.crs) Key Functions
+
+| Symbol | code.bin offset | Virtual addr | Description |
+|--------|----------------|--------------|-------------|
+| `setKeyContFrmEndTime(float)` | 0x192A5C | 0x292A5C | QTE key-hold window setter |
+| `resetKeyContFrm()` | 0x1921D0 | 0x2921D0 | Reset key continue frame |
+| `isFps30()` | 0x15EE74 | 0x25EE74 | Reads TaskBase+0x45 fps flag |
+| `startDefaultHitCheck(int)` | 0x0F8CE0 | 0x1F8CE0 | Hit detection window start |
+| `kj::ObjTimer::init` | 0x098598 | 0x198598 | Timer initialization |
+
+CRS export table: file offset 0x1C8, 2461 named exports. Format: [name_off: u32, seg_tag: u32], seg_offset = seg_tag >> 4.
 
 ### IPS Format Reference
 - Header: `PATCH` (5 bytes)
