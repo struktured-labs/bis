@@ -44,20 +44,26 @@ def main():
     orig = struct.unpack("<I", code[cave_foff : cave_foff + 4])[0]
     assert orig == 0xE92D4010, f"Expected PUSH at cave, got {orig:#010x}"
 
-    # 8 instructions = 32 bytes.
-    # Reads R button directly from HID SharedMemory at fixed address 0x10002000.
-    # HID SharedMemory pad state: base + 0x1C (PadData) + 0x10 (current_state.hex)
-    # Button bits: active-LOW on 3DS (0 = pressed). Bit 8 = R button.
+    # 13 instructions = 52 bytes.
+    # Reads R button from game's input struct via pointer at 0x3F71C0.
+    # Null check: if pointer uninitialized (init/shutdown) → default 60fps.
+    # CONFIRMED working on real 3DS hardware (streamer test).
+    # HID SharedMem approach was emulator-only (0x10002000 unmapped on real HW).
     cave = struct.pack(
-        "<8I",
-        0xE92D4004,  # PUSH {R2,LR}
-        0xE59F2010,  # LDR  R2,[PC,#0x10]   ; load HID shm+0x2C address
-        0xE5922000,  # LDR  R2,[R2]          ; load current pad state
-        0xE3120C01,  # TST  R2,#0x100        ; test R button (bit 8, active-high)
-        0x13A01001,  # MOVNE R1,#1           ; R pressed (bit=1) -> 30fps
-        0x03A01000,  # MOVEQ R1,#0           ; R not pressed (bit=0) -> 60fps
-        0xE8BD8004,  # POP  {R2,PC}
-        0x1000201C,  # .word 0x1000201C      ; HID SharedMem + 0x1C = current_state
+        "<13I",
+        0xE92D400C,  # PUSH {R2,R3,LR}
+        0xE59F2024,  # LDR  R2,[PC,#0x24]   ; load &global (0x3F71C0)
+        0xE5922000,  # LDR  R2,[R2]          ; deref -> input base
+        0xE3520000,  # CMP  R2,#0            ; null check (init/shutdown safe)
+        0x0A000004,  # BEQ  default_60fps    ; null → 60fps
+        0xE2822A61,  # ADD  R2,R2,#0x61000
+        0xE2822EC2,  # ADD  R2,R2,#0xC20
+        0xE5922008,  # LDR  R2,[R2,#8]       ; load buttons
+        0xE3120C01,  # TST  R2,#0x100        ; test R button
+        0x13A01001,  # MOVNE R1,#1           ; R pressed -> 30fps
+        0x03A01000,  # MOVEQ R1,#0           ; R not pressed -> 60fps (default_60fps)
+        0xE8BD800C,  # POP  {R2,R3,PC}
+        0x003F71C0,  # .word 0x003F71C0      ; global input ptr address
     )
     records.append((cave_foff, cave))
 
