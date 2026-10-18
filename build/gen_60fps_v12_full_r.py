@@ -9,15 +9,15 @@ Code cave approach: overwrites a verified-dead function at 0x104810 in .text
 with R-button reading logic. Main frame loop BLs to code cave instead of
 reading FPS byte directly.
 
-Button state: game stores active-high buttons at [*(0x3F71C0) + 0x61C28].
-R button = bit 8 (0x100).
+Button state: read from HID SharedMemory (mapped by the game at 0x10002000),
+current pad state at +0x1C, R button = bit 8 (0x100). Same as the v1.0 patch.
 """
 
 import struct
 import sys
 import os
 
-CODE_BIN = os.path.expanduser("~/projects/bis/tmp/update_v12/exefs_dir/code.bin")
+CODE_BIN = os.environ.get("BIS_V12_CODE_BIN", os.path.expanduser("~/projects/bis/tmp/update_v12/exefs_dir/code.bin"))
 OUTPUT = os.path.join(os.path.dirname(__file__), "..", "patches", "60fps_v12_full_r.ips")
 
 
@@ -41,27 +41,35 @@ def main():
     records = []
 
     # =========================================================================
-    # 1. CODE CAVE at file offset 0x004810 (vaddr 0x104810) - 52 bytes
+    # 1. CODE CAVE at file offset 0x004810 (vaddr 0x104810) - 32 bytes
     #    Overwrites dead function (verified: zero references in entire binary)
     #    Reads R button state from game's input global, returns FPS mode in R1
     # =========================================================================
+    # Reads the R button directly from HID SharedMemory, exactly like the
+    # working v1.0 patch. The game itself maps HID SharedMemory at 0x10002000
+    # (svcMapMemoryBlock addr=0x10002000), so this address is valid on both
+    # emulators and real hardware while the game runs.
+    #
+    # Issue #1: the previous cave read the pointer chain
+    # *(0x3F71C0)+0x61C28+8, which never gets initialised. The pointer is
+    # NULL, the cave took the "default 60fps" branch every frame, and holding
+    # R did nothing. v1.0 was already moved off that chain (commit ada12d0);
+    # v1.2 was not.
+    #
+    # HID SharedMemory pad state: base + 0x1C = current_state.hex.
+    # Bit 8 = R button (active-high in the shared memory word).
     cave = struct.pack(
-        "<13I",
-        0xE92D400C,  # PUSH {R2,R3,LR}
-        0xE59F2024,  # LDR  R2,[PC,#0x24]   ; load &global (0x3F71C0)
-        0xE5922000,  # LDR  R2,[R2]          ; deref -> input base
-        0xE3520000,  # CMP  R2,#0            ; null check (early init)
-        0x0A000004,  # BEQ  default_60fps    ; if null, default to 60fps
-        0xE2822A61,  # ADD  R2,R2,#0x61000   ; \
-        0xE2822EC2,  # ADD  R2,R2,#0xC20     ;  } R2 += 0x61C20
-        0xE5922008,  # LDR  R2,[R2,#8]       ; load buttons (0x61C28 total)
-        0xE3120C01,  # TST  R2,#0x100        ; test R button (bit 8)
-        0x13A01001,  # MOVNE R1,#1           ; R pressed -> 30fps
-        0x03A01000,  # MOVEQ R1,#0           ; R not pressed -> 60fps
-        0xE8BD800C,  # POP  {R2,R3,PC}       ; return
-        0x003F71C0,  # .word 0x003F71C0      ; global input pointer address
+        "<8I",
+        0xE92D4004,  # PUSH {R2,LR}
+        0xE59F2010,  # LDR  R2,[PC,#0x10]   ; =0x1000201C
+        0xE5922000,  # LDR  R2,[R2]          ; current pad state
+        0xE3120C01,  # TST  R2,#0x100        ; R button (bit 8)
+        0x13A01001,  # MOVNE R1,#1           ; R held -> 30fps
+        0x03A01000,  # MOVEQ R1,#0           ; R released -> 60fps
+        0xE8BD8004,  # POP  {R2,PC}
+        0x1000201C,  # .word HID SharedMem (0x10002000) + 0x1C
     )
-    assert len(cave) == 52
+    assert len(cave) == 32
     records.append((0x004810, cave))
 
     # Verify we're overwriting the expected dead function
@@ -141,7 +149,7 @@ def main():
     print(f"  Size: {len(ips_data)} bytes")
     print(f"  Records: {len(records)}")
     print(f"\nPatch summary:")
-    print(f"  Code cave: 52 bytes at 0x004810 (R-button toggle logic)")
+    print(f"  Code cave: 32 bytes at 0x004810 (R-button toggle logic)")
     print(f"  Main reader: BL to code cave at 0x03E8E8")
     print(f"  Init reader: MOV R0,#0 at 0x180A5C")
     print(f"  FPS setter writers: 3x MOV R0,#0")
