@@ -5,16 +5,21 @@ STANDALONE patch - works on real 3DS hardware, no emulator mods needed.
 Hold R button = 30fps (for stability in battles/transitions)
 Release R = 60fps
 
-Code cave at 0x10378C in .text (verified dead via automated save screen test).
-Input pointer at 0x3F71C0 (same vaddr in v1.0 and v1.2).
-All +0x3D writers NOP'd to prevent game from overriding toggle state.
+Code cave is at 0x1047C8, an unreferenced wait-loop (same function the
+v1.2 patch uses at 0x104810). The previous cave at 0x10378C overwrote a
+live CloseHandle used from 0x101E68 during shutdown.
+
+Button state is read from the game's HID object at 0x42A6C0+4 (same
+address in v1.0 and v1.2). Do not hardcode 0x1000201C.
 """
 
 import struct
 import os
 
-CODE_BIN = os.path.expanduser("~/projects/bis/tmp/v10_extract/exefs_dir/code.bin")
+CODE_BIN = os.environ.get("BIS_V10_CODE_BIN") or os.path.expanduser("~/projects/bis/tmp/v10_extract/exefs_dir/code.bin")
 OUTPUT = os.path.join(os.path.dirname(__file__), "..", "patches", "60fps_v10_full_r.ips")
+
+HID_OBJECT = 0x0042A6C0
 
 
 def make_ips(records):
@@ -35,30 +40,34 @@ def main():
 
     records = []
 
-    # 1. CODE CAVE at file 0x00378C (vaddr 0x10378C), 52 bytes
-    # Verified dead via NOP + save screen automated test.
-    # (0x0660BC was LIVE code — called via vtable during save screen!)
-    cave_foff = 0x00378C
-    cave_vaddr = 0x10378C
+    # 1. CODE CAVE at file 0x0047C8 (vaddr 0x1047C8), 44 bytes.
+    # Previously 0x00378C (vaddr 0x10378C), which is a live CloseHandle
+    # called from 0x101E68 at shutdown. 0x1047C8 is the unreferenced
+    # wait-loop (no B/BL or literal xrefs), matching the v1.2 cave site.
+    cave_foff = 0x0047C8
+    cave_vaddr = 0x1047C8
 
     orig = struct.unpack("<I", code[cave_foff : cave_foff + 4])[0]
     assert orig == 0xE92D4010, f"Expected PUSH at cave, got {orig:#010x}"
 
-    # 8 instructions = 32 bytes.
-    # Reads R button directly from HID SharedMemory at fixed address 0x10002000.
-    # HID SharedMemory pad state: base + 0x1C (PadData) + 0x10 (current_state.hex)
-    # Button bits: active-LOW on 3DS (0 = pressed). Bit 8 = R button.
+    # R is read from the game's HID object at 0x42A6C0+4 (kernel-chosen
+    # shm VA). Hardcoding 0x1000201C data-aborts on real hardware.
+    # Null-check defaults to 60fps if HID is not yet initialised.
     cave = struct.pack(
-        "<8I",
+        "<11I",
         0xE92D4004,  # PUSH {R2,LR}
-        0xE59F2010,  # LDR  R2,[PC,#0x10]   ; load HID shm+0x2C address
-        0xE5922000,  # LDR  R2,[R2]          ; load current pad state
-        0xE3120C01,  # TST  R2,#0x100        ; test R button (bit 8, active-high)
-        0x13A01001,  # MOVNE R1,#1           ; R pressed (bit=1) -> 30fps
-        0x03A01000,  # MOVEQ R1,#0           ; R not pressed (bit=0) -> 60fps
+        0xE59F201C,  # LDR  R2,[PC,#0x1C]   ; =HID_OBJECT
+        0xE5922004,  # LDR  R2,[R2,#4]      ; shm base
+        0xE3520000,  # CMP  R2,#0
+        0x0A000002,  # BEQ  default_60
+        0xE592201C,  # LDR  R2,[R2,#0x1C]   ; current pad
+        0xE3120C01,  # TST  R2,#0x100       ; R button (bit 8)
+        0x13A01001,  # MOVNE R1,#1          ; R held -> 30fps
+        0x03A01000,  # MOVEQ R1,#0          ; default_60 / R released -> 60fps
         0xE8BD8004,  # POP  {R2,PC}
-        0x1000201C,  # .word 0x1000201C      ; HID SharedMem + 0x1C = current_state
+        HID_OBJECT,
     )
+    assert len(cave) == 44
     records.append((cave_foff, cave))
 
     # 2. Main frame loop: BL to code cave at 0x03E918
@@ -97,7 +106,6 @@ def main():
         records.append((foff, nop_data))
         print(f"  NOP: {desc} at 0x{foff:06X} ({count} instr)")
 
-    # Build and write
     ips_data = make_ips(records)
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     with open(OUTPUT, "wb") as f:
@@ -105,6 +113,7 @@ def main():
 
     print(f"\nGenerated {OUTPUT}")
     print(f"  Size: {len(ips_data)} bytes, {len(records)} records")
+    print(f"  Code cave: 44 bytes at 0x{cave_foff:06X} (HID object 0x42A6C0+4)")
     print(f"  Behavior: R released = 60fps, R held = 30fps")
 
 

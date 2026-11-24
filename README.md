@@ -29,10 +29,13 @@ Unlike cheat codes that continuously overwrite memory every 50ms, this patch mod
    ```
    SD:/luma/titles/00040000001D1400/
    ```
-3. Copy `60fps.ips` into that folder and **rename it to `code.ips`**:
+3. Copy the IPS for your game version into that folder and **rename it to `code.ips`**:
    ```
    SD:/luma/titles/00040000001D1400/code.ips
    ```
+   Use the base title ID (`00040000001D1400`), even if the 1.2 update is
+   installed. Do not use the update title `0004000E001D1400` — Luma will
+   not apply the patch from that folder.
 4. Make sure "Enable game patching" is turned on in Luma3DS config (hold SELECT on boot)
 5. Launch the game -- the patch applies automatically
 

@@ -5,12 +5,12 @@ STANDALONE patch - works on real 3DS hardware, no emulator mods needed.
 Hold R button = 30fps (for stability in battles/transitions)
 Release R = 60fps
 
-Code cave approach: overwrites a verified-dead function at 0x104810 in .text
-with R-button reading logic. Main frame loop BLs to code cave instead of
-reading FPS byte directly.
+Code cave: overwrites an unreferenced wait-loop at 0x104810 in .text
+(no B/BL or literal xrefs in code.bin or the game's CRO modules).
 
-Button state: read from HID SharedMemory (mapped by the game at 0x10002000),
-current pad state at +0x1C, R button = bit 8 (0x100). Same as the v1.0 patch.
+Button state is read from the game's HID object at 0x42A6C0+4 (the shared
+memory base chosen by the kernel). Do not hardcode 0x1000201C: that
+address is Azahar/Citra-only and data-aborts on real hardware.
 """
 
 import struct
@@ -19,6 +19,8 @@ import os
 
 CODE_BIN = os.environ.get("BIS_V12_CODE_BIN", os.path.expanduser("~/projects/bis/tmp/update_v12/exefs_dir/code.bin"))
 OUTPUT = os.path.join(os.path.dirname(__file__), "..", "patches", "60fps_v12_full_r.ips")
+
+HID_OBJECT = 0x0042A6C0
 
 
 def make_ips(records):
@@ -41,38 +43,35 @@ def main():
     records = []
 
     # =========================================================================
-    # 1. CODE CAVE at file offset 0x004810 (vaddr 0x104810) - 32 bytes
-    #    Overwrites dead function (verified: zero references in entire binary)
-    #    Reads R button state from game's input global, returns FPS mode in R1
+    # 1. CODE CAVE at file offset 0x004810 (vaddr 0x104810) - 44 bytes
+    #    Overwrites an unreferenced wait-loop (no static xrefs).
     # =========================================================================
-    # Reads the R button directly from HID SharedMemory, exactly like the
-    # working v1.0 patch. The game itself maps HID SharedMemory at 0x10002000
-    # (svcMapMemoryBlock addr=0x10002000), so this address is valid on both
-    # emulators and real hardware while the game runs.
-    #
-    # Issue #1: the previous cave read the pointer chain
-    # *(0x3F71C0)+0x61C28+8, which never gets initialised. The pointer is
-    # NULL, the cave took the "default 60fps" branch every frame, and holding
-    # R did nothing. v1.0 was already moved off that chain (commit ada12d0);
-    # v1.2 was not.
-    #
-    # HID SharedMemory pad state: base + 0x1C = current_state.hex.
-    # Bit 8 = R button (active-high in the shared memory word).
+    # R is read from the game's HID object at 0x42A6C0. Offset +4 is the
+    # HID shared-memory base from svcMapMemoryBlock (the game passes addr=0,
+    # so the kernel chooses the VA). On Azahar that base is 0x10002000; on
+    # real hardware it is a different address. The previous cave loaded
+    # 0x1000201C directly; that address is unmapped on a real 3DS and
+    # data-aborts at boot (Remillio dump on v1.0; GameBanana #14144835 on
+    # v1.2). Null-check defaults to 60fps if HID is not yet initialised.
+    # HID shm +0x1C = current pad state; bit 8 (0x100) = R, active-high.
     cave = struct.pack(
-        "<8I",
+        "<11I",
         0xE92D4004,  # PUSH {R2,LR}
-        0xE59F2010,  # LDR  R2,[PC,#0x10]   ; =0x1000201C
-        0xE5922000,  # LDR  R2,[R2]          ; current pad state
-        0xE3120C01,  # TST  R2,#0x100        ; R button (bit 8)
-        0x13A01001,  # MOVNE R1,#1           ; R held -> 30fps
-        0x03A01000,  # MOVEQ R1,#0           ; R released -> 60fps
+        0xE59F201C,  # LDR  R2,[PC,#0x1C]   ; =HID_OBJECT
+        0xE5922004,  # LDR  R2,[R2,#4]      ; shm base
+        0xE3520000,  # CMP  R2,#0
+        0x0A000002,  # BEQ  default_60
+        0xE592201C,  # LDR  R2,[R2,#0x1C]   ; current pad
+        0xE3120C01,  # TST  R2,#0x100       ; R button (bit 8)
+        0x13A01001,  # MOVNE R1,#1          ; R held -> 30fps
+        0x03A01000,  # MOVEQ R1,#0          ; default_60 / R released -> 60fps
         0xE8BD8004,  # POP  {R2,PC}
-        0x1000201C,  # .word HID SharedMem (0x10002000) + 0x1C
+        HID_OBJECT,
     )
-    assert len(cave) == 32
+    assert len(cave) == 44
     records.append((0x004810, cave))
 
-    # Verify we're overwriting the expected dead function
+    # Verify we're overwriting the expected unreferenced function
     orig = code[0x4810 : 0x4810 + 4]
     assert struct.unpack("<I", orig)[0] == 0xE92D4010, (
         f"Expected PUSH {{R4,LR}} at 0x4810, got {orig.hex()}"
@@ -98,8 +97,6 @@ def main():
 
     # =========================================================================
     # 4. FPS SETTER WRITERS - force all levels to 0 (60fps in memory)
-    #    The FPS setter at 0x27C124 has 3 MOV R0,#level instructions
-    #    that feed into STRB R0,[R4,#0x3D]. Force all to MOV R0,#0.
     # =========================================================================
     writer_patches = [
         (0x17C224, 0xE3A00003, 0xE3A00000, "MOV R0,#3 -> MOV R0,#0 (lvl3)"),
@@ -130,7 +127,6 @@ def main():
     # =========================================================================
     # 6. CONDITIONAL WRITER NOP at 0x0828D8 (from v3)
     # =========================================================================
-    # LDRBNE R0,[R5,#0x181] + STRBNE R0,[R4,#0x3D] - conditional write of non-zero
     orig1 = struct.unpack("<I", code[0x0828D8 : 0x0828D8 + 4])[0]
     orig2 = struct.unpack("<I", code[0x0828DC : 0x0828DC + 4])[0]
     assert orig1 == 0x15D50181, f"Expected LDRBNE at 0x0828D8, got {orig1:#010x}"
@@ -139,7 +135,6 @@ def main():
     records.append((0x0828D8, nop_data))
     print(f"  Writer: NOP x2 at file 0x0828D8 (was {orig1:08X} {orig2:08X})")
 
-    # Build and write IPS
     ips_data = make_ips(records)
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     with open(OUTPUT, "wb") as f:
@@ -148,16 +143,8 @@ def main():
     print(f"\nGenerated {OUTPUT}")
     print(f"  Size: {len(ips_data)} bytes")
     print(f"  Records: {len(records)}")
-    print(f"\nPatch summary:")
-    print(f"  Code cave: 32 bytes at 0x004810 (R-button toggle logic)")
-    print(f"  Main reader: BL to code cave at 0x03E8E8")
-    print(f"  Init reader: MOV R0,#0 at 0x180A5C")
-    print(f"  FPS setter writers: 3x MOV R0,#0")
-    print(f"  Other readers: 4x MOV Rx,#0")
-    print(f"  Conditional writer: 2x NOP at 0x0828D8")
-    print(f"\nBehavior:")
-    print(f"  R button released: 60fps")
-    print(f"  R button held: 30fps")
+    print(f"  Code cave: 44 bytes at 0x004810 (HID object 0x42A6C0+4)")
+    print(f"  Behavior: R released = 60fps, R held = 30fps")
 
 
 if __name__ == "__main__":
