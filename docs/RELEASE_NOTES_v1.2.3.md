@@ -8,7 +8,7 @@ v1.2.3's R-toggle patch for **game 1.0** was run on a real 3DS (Luma3DS, USA gam
 
 **Scope, honestly:** on hardware, game 1.0 boot and play are confirmed. The 60fps / hold-R-for-30fps toggle is verified in stock Azahar 2126.2 (the phone video is 30fps, so it can't show the frame rate). **Game 1.2 has not been run on real hardware yet**; please report back if you try it.
 
-> **Pick the folder that matches your game version.** Title screen shows "Ver. 1.2" = `game_v1.2/`; no label = `game_v1.0/`. **The wrong one crashes at boot.** (That is exactly what happened on our first hardware attempt: a 1.2 patch on a 1.0 game.)
+> **Pick the folder that matches your game version.** Title screen shows "Ver. 1.2" (FBI lists the update title) = `game_v1.2/`; no label (FBI shows Version 0 and no update title) = `game_v1.0/`. **The wrong one crashes at boot.** (That is exactly what happened on our first hardware attempt: a 1.2 patch on a 1.0 game.)
 
 ## Fixes
 

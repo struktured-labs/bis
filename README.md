@@ -1,6 +1,6 @@
 # 60 FPS Patch - Mario & Luigi: Bowser's Inside Story + Bowser Jr.'s Journey (3DS)
 
-**Double your framerate from 30 FPS to 60 FPS with a tiny 26-byte IPS patch.**
+**Double your framerate from 30 FPS to 60 FPS.** The recommended build is an IPS patch with a hold-R-for-30fps toggle.
 
 > **Latest: [v1.2.3](https://github.com/struktured-labs/bis/releases/tag/v1.2.3), tested on real 3DS hardware.**
 > The v1.2.3 R-toggle patch (game 1.0) boots and runs on a real 3DS with no crash
@@ -8,15 +8,17 @@
 > [test notes](docs/HW_TEST_2026-11-24.md)). The 60fps / hold-R-for-30fps toggle is verified in Azahar.
 > Game 1.2 has not been run on real hardware yet.
 >
-> **Pick the patch that matches your game version.** Title screen shows "Ver. 1.2" = game 1.2; no label = game 1.0.
-> The wrong one crashes at boot. Download `bis_60fps_v1.2.3_usa.zip` from the release and read its README.txt.
+> **Pick the patch that matches your game version.** Title screen shows "Ver. 1.2" (FBI lists the update title) = game 1.2; no label (FBI shows Version 0 and no update title) = game 1.0.
+> **The wrong one crashes at boot.** Download [`bis_60fps_v1.2.3_usa.zip`](https://github.com/struktured-labs/bis/releases/tag/v1.2.3) from the release and read its README.txt.
+
+![v1.2.3 on a real 3DS, game 1.0: first battle](docs/img/bis_v1.2.3_real_3ds_game1.0_still.jpg)
 
 | | |
 |---|---|
 | **Game** | Mario & Luigi: Bowser's Inside Story + Bowser Jr.'s Journey |
 | **Region** | USA |
 | **Title ID** | 00040000001D1400 |
-| **Patch Size** | 26 bytes |
+| **Patch Size** | 133 bytes (game 1.0) / 151 bytes (game 1.2) |
 | **Format** | IPS (code.bin patch) |
 
 ---
@@ -31,27 +33,25 @@ Unlike cheat codes that continuously overwrite memory every 50ms, this patch mod
 
 ## Installation
 
+**Use the files in `bis_60fps_v1.2.3_usa.zip` from the [v1.2.3 release](https://github.com/struktured-labs/bis/releases/tag/v1.2.3).** Check your game version first: "Ver. 1.2" on the title screen, or FBI listing the update title, means game 1.2 (`game_v1.2/60fps_v12_full_r.ips`). No label, or FBI showing Version 0 and no update title, means game 1.0 (`game_v1.0/60fps_v10_full_r.ips`). **The wrong file crashes at boot.**
+
 ### Luma3DS (Real 3DS / 2DS Hardware)
 
-1. Download `60fps.ips` from the [patches](patches/) folder
-2. On your SD card, create the folder path:
-   ```
-   SD:/luma/titles/00040000001D1400/
-   ```
-3. Copy the IPS for your game version into that folder and **rename it to `code.ips`**:
+1. Copy the IPS for your game version into this folder and **rename it to `code.ips`**:
    ```
    SD:/luma/titles/00040000001D1400/code.ips
    ```
    Use the base title ID (`00040000001D1400`), even if the 1.2 update is
    installed. Do not use the update title `0004000E001D1400` — Luma will
    not apply the patch from that folder.
-4. Make sure "Enable game patching" is turned on in Luma3DS config (hold SELECT on boot)
-5. Launch the game -- the patch applies automatically
+   No SD swap needed: you can send the file over Wi-Fi with an FTP homebrew
+   app such as ftpd.
+2. Hold SELECT while powering on, turn on "Enable game patching", and save.
+3. Launch the game. It runs at 60fps; hold R for 30fps.
 
 ### Azahar / Lime3DS Emulator
 
-1. Download `60fps.ips`
-2. Place it at (create folders as needed):
+1. Copy the IPS for your game version (see above) into the mods folder:
 
    **Linux:**
    ```
@@ -69,8 +69,7 @@ Unlike cheat codes that continuously overwrite memory every 50ms, this patch mod
 
 ### Citra Emulator
 
-1. Download `60fps.ips`
-2. Place it at:
+1. Copy the IPS for your game version to:
 
    **Linux:**
    ```
