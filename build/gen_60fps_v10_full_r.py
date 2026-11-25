@@ -5,9 +5,12 @@ STANDALONE patch - works on real 3DS hardware, no emulator mods needed.
 Hold R button = 30fps (for stability in battles/transitions)
 Release R = 60fps
 
-Code cave is at 0x1047C8, an unreferenced wait-loop (same function the
-v1.2 patch uses at 0x104810). The previous cave at 0x10378C overwrote a
-live CloseHandle used from 0x101E68 during shutdown.
+Code cave is in the zero padding at the end of the last .text page
+(vaddr 0x389F00; .rodata starts at 0x38A000). Earlier caves overwrote live
+code: 0x10378C (v1.2.1 and before) is a CloseHandle used at shutdown, and
+0x1047C8 (v1.2.2) is the body of a boot-time sync routine entered at
+0x1047C4 (BL from 0x101A24) that waits for a worker thread to set
+[0x42A818+0x29C]. Azahar's thread scheduling hid that race.
 
 Button state is read from the game's HID object at 0x42A6C0+4 (same
 address in v1.0 and v1.2). Do not hardcode 0x1000201C.
@@ -40,15 +43,12 @@ def main():
 
     records = []
 
-    # 1. CODE CAVE at file 0x0047C8 (vaddr 0x1047C8), 44 bytes.
-    # Previously 0x00378C (vaddr 0x10378C), which is a live CloseHandle
-    # called from 0x101E68 at shutdown. 0x1047C8 is the unreferenced
-    # wait-loop (no B/BL or literal xrefs), matching the v1.2 cave site.
-    cave_foff = 0x0047C8
-    cave_vaddr = 0x1047C8
-
-    orig = struct.unpack("<I", code[cave_foff : cave_foff + 4])[0]
-    assert orig == 0xE92D4010, f"Expected PUSH at cave, got {orig:#010x}"
+    # 1. CODE CAVE at file 0x289F00 (vaddr 0x389F00), 44 bytes, in the
+    # zero padding after the end of .text (last code byte is file 0x2890E7;
+    # the 650th text page ends at 0x28A000). Nothing references it.
+    cave_foff = 0x289F00
+    cave_vaddr = 0x389F00
+    assert code[0x2890E8:0x28A000] == bytes(0x28A000 - 0x2890E8), "text tail padding not zero"
 
     # R is read from the game's HID object at 0x42A6C0+4 (kernel-chosen
     # shm VA). Hardcoding 0x1000201C data-aborts on real hardware.
@@ -98,13 +98,22 @@ def main():
     # 5. NOP all STRB [R4,#0x3D] writers to prevent game from overriding toggle
     strb_nops = [
         (0x082900, 2, "conditional LDRB+STRB"),  # LDRBNE + STRBNE pair
-        (0x14B474, 1, "init STRB R0"),            # writes 0xFF during init
         (0x17C288, 1, "FPS setter STRB"),          # FPS setter final write
     ]
     for foff, count, desc in strb_nops:
         nop_data = struct.pack(f"<{count}I", *([0xE1A00000] * count))
         records.append((foff, nop_data))
         print(f"  NOP: {desc} at 0x{foff:06X} ({count} instr)")
+
+    # 6. Constructor init of +0x3D: original writes 0xFF (STRB R0). Earlier
+    # builds NOPed it, leaving the byte uninitialised heap memory that four
+    # unpatched readers (0x112A28, 0x112B84, 0x36311C, 0x36BFE4) still see.
+    # Store R5 instead (R5 = 0 since 0x24B454) so it is deterministically 0.
+    orig = struct.unpack("<I", code[0x14B474 : 0x14B478])[0]
+    assert orig == 0xE5C4003D, f"Expected STRB R0,[R4,#0x3D] at 0x14B474, got {orig:#010x}"
+    assert struct.unpack("<I", code[0x14B454 : 0x14B458])[0] == 0xE3A05000, "expected MOV R5,#0"
+    records.append((0x14B474, struct.pack("<I", 0xE5C4503D)))  # STRB R5,[R4,#0x3D]
+    print("  Init: STRB R5 (=0) at 0x14B474")
 
     ips_data = make_ips(records)
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
