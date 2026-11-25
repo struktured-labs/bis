@@ -5,8 +5,14 @@ STANDALONE patch - works on real 3DS hardware, no emulator mods needed.
 Hold R button = 30fps (for stability in battles/transitions)
 Release R = 60fps
 
-Code cave: overwrites an unreferenced wait-loop at 0x104810 in .text
-(no B/BL or literal xrefs in code.bin or the game's CRO modules).
+Code cave: zero padding at the end of the last .text page (vaddr 0x389F00).
+The exheader text segment ends at 0x389218 but is mapped as 650 whole RX
+pages (to 0x38A000); the tail is zero-filled and unreferenced. Earlier
+R-toggle builds (v1.2-full-r through v1.2.2) put the cave at 0x104810, which is NOT dead code:
+it is the body of a boot-time sync routine entered at 0x10480C (BL from
+0x101A24) that calls 0x108974(0x3FD670) and then sleeps until worker
+thread 5 sets byte [0x42A818+0x29C]. Overwriting it removed that wait;
+Azahar's thread scheduling hid the race.
 
 Button state is read from the game's HID object at 0x42A6C0+4 (the shared
 memory base chosen by the kernel). Do not hardcode 0x1000201C: that
@@ -21,6 +27,16 @@ CODE_BIN = os.environ.get("BIS_V12_CODE_BIN", os.path.expanduser("~/projects/bis
 OUTPUT = os.path.join(os.path.dirname(__file__), "..", "patches", "60fps_v12_full_r.ips")
 
 HID_OBJECT = 0x0042A6C0
+TEXT_END_FOFF = 0x289218       # exheader .text size (v1.2)
+TEXT_PAGE_END_FOFF = 0x28A000  # 650 pages; .rodata starts at vaddr 0x38A000
+CAVE_FOFF = 0x289F00
+CAVE_VADDR = 0x100000 + CAVE_FOFF
+
+
+def bl(src_vaddr, dst_vaddr):
+    off = (dst_vaddr - (src_vaddr + 8)) // 4
+    assert -(1 << 23) <= off < (1 << 23)
+    return 0xEB000000 | (off & 0x00FFFFFF)
 
 
 def make_ips(records):
@@ -43,8 +59,9 @@ def main():
     records = []
 
     # =========================================================================
-    # 1. CODE CAVE at file offset 0x004810 (vaddr 0x104810) - 44 bytes
-    #    Overwrites an unreferenced wait-loop (no static xrefs).
+    # 1. CODE CAVE at file offset 0x289F00 (vaddr 0x389F00) - 44 bytes
+    #    End-of-.text page padding (text ends 0x389218, page ends 0x38A000).
+    #    The original boot sync routine at 0x10480C is left untouched.
     # =========================================================================
     # R is read from the game's HID object at 0x42A6C0. Offset +4 is the
     # HID shared-memory base from svcMapMemoryBlock (the game passes addr=0,
@@ -69,22 +86,20 @@ def main():
         HID_OBJECT,
     )
     assert len(cave) == 44
-    records.append((0x004810, cave))
-
-    # Verify we're overwriting the expected unreferenced function
-    orig = code[0x4810 : 0x4810 + 4]
-    assert struct.unpack("<I", orig)[0] == 0xE92D4010, (
-        f"Expected PUSH {{R4,LR}} at 0x4810, got {orig.hex()}"
+    assert code[TEXT_END_FOFF:TEXT_PAGE_END_FOFF] == bytes(TEXT_PAGE_END_FOFF - TEXT_END_FOFF), (
+        "end-of-text padding is not all zero"
     )
+    assert TEXT_END_FOFF <= CAVE_FOFF and CAVE_FOFF + len(cave) <= TEXT_PAGE_END_FOFF
+    records.append((CAVE_FOFF, cave))
 
     # =========================================================================
     # 2. MAIN FRAME LOOP READER at 0x03E8E8 (vaddr 0x13E8E8)
     #    Replace: LDRB R1,[R4,#0x3D]  (E5D4103D)
-    #    With:    BL   code_cave      (EBFF17C8)
+    #    With:    BL   code_cave
     # =========================================================================
     orig = struct.unpack("<I", code[0x03E8E8 : 0x03E8E8 + 4])[0]
     assert orig == 0xE5D4103D, f"Expected LDRB R1,[R4,#0x3D] at 0x3E8E8, got {orig:#010x}"
-    records.append((0x03E8E8, struct.pack("<I", 0xEBFF17C8)))
+    records.append((0x03E8E8, struct.pack("<I", bl(0x13E8E8, CAVE_VADDR))))
 
     # =========================================================================
     # 3. INIT-TIME READER at 0x180A5C (vaddr 0x280A5C)
@@ -143,7 +158,7 @@ def main():
     print(f"\nGenerated {OUTPUT}")
     print(f"  Size: {len(ips_data)} bytes")
     print(f"  Records: {len(records)}")
-    print(f"  Code cave: 44 bytes at 0x004810 (HID object 0x42A6C0+4)")
+    print(f"  Code cave: 44 bytes at vaddr 0x{CAVE_VADDR:06X} (end-of-text padding; HID object 0x42A6C0+4)")
     print(f"  Behavior: R released = 60fps, R held = 30fps")
 
 
