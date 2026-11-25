@@ -2,6 +2,15 @@
 
 **Double your framerate from 30 FPS to 60 FPS with a tiny 26-byte IPS patch.**
 
+> **Latest: [v1.2.3](https://github.com/struktured-labs/bis/releases/tag/v1.2.3), tested on real 3DS hardware.**
+> The v1.2.3 R-toggle patch (game 1.0) boots and runs on a real 3DS with no crash
+> ([video](https://github.com/struktured-labs/bis/releases/download/v1.2.3/bis_v1.2.3_real_3ds_game1.0.mp4),
+> [test notes](docs/HW_TEST_2026-11-24.md)). The 60fps / hold-R-for-30fps toggle is verified in Azahar.
+> Game 1.2 has not been run on real hardware yet.
+>
+> **Pick the patch that matches your game version.** Title screen shows "Ver. 1.2" = game 1.2; no label = game 1.0.
+> The wrong one crashes at boot. Download `bis_60fps_v1.2.3_usa.zip` from the release and read its README.txt.
+
 | | |
 |---|---|
 | **Game** | Mario & Luigi: Bowser's Inside Story + Bowser Jr.'s Journey |
@@ -79,7 +88,8 @@ Unlike cheat codes that continuously overwrite memory every 50ms, this patch mod
 
 | Platform | Status |
 |----------|--------|
-| New 3DS / New 2DS XL (Luma3DS) | Tested |
+| Real 3DS (Luma3DS), v1.2.3 R-toggle, game 1.0 | Tested: boots and runs, no crash (2026-11-24) |
+| Real 3DS (Luma3DS), v1.2.3 R-toggle, game 1.2 | Not yet tested on hardware |
 | Azahar / Lime3DS (Vulkan) | Tested |
 | Azahar / Lime3DS (OpenGL) | Should work |
 | Citra | Should work |
@@ -158,7 +168,10 @@ Never hardcode memory addresses or rely on behavior that only holds in an
 emulator. Read state the way the game or the OS does. v1.2.1 read the R
 button from `0x1000201C`, an address that only exists in Azahar/Citra, and
 crashed at boot on real 3DS hardware. v1.2.2 reads it through the game's
-own HID object (`*(*(0x42A6C0 + 4) + 0x1C)`). See
+own HID object (`*(*(0x42A6C0 + 4) + 0x1C)`). v1.2.2 then put its code cave
+over a live boot routine that waits for a worker thread, a race Azahar's
+scheduling hid; v1.2.3 moves the cave into unused padding at the end of
+`.text` (vaddr `0x389F00`). See [docs/REAL_HW_AUDIT_2026-11-24.md](docs/REAL_HW_AUDIT_2026-11-24.md). See
 [docs/REAL_HARDWARE_RULES.md](docs/REAL_HARDWARE_RULES.md) and
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
