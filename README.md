@@ -152,6 +152,18 @@ The IPS patch is recommended over the cheat code because it patches the game cod
 
 ---
 
+## For Patch Authors: Real Hardware Rule
+
+Never hardcode memory addresses or rely on behavior that only holds in an
+emulator. Read state the way the game or the OS does. v1.2.1 read the R
+button from `0x1000201C`, an address that only exists in Azahar/Citra, and
+crashed at boot on real 3DS hardware. v1.2.2 reads it through the game's
+own HID object (`*(*(0x42A6C0 + 4) + 0x1C)`). See
+[docs/REAL_HARDWARE_RULES.md](docs/REAL_HARDWARE_RULES.md) and
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
 ## Credits
 
 - **Patch by:** struktured + [Claude](https://claude.ai)

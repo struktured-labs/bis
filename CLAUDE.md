@@ -1,3 +1,4 @@
+- **REAL HARDWARE RULE (standing, from Carmelo): never hardcode memory addresses or rely on behavior that only holds in Azahar or any other emulator. Read state the way the game or the OS does (e.g. R via the game's HID object `*(*(0x42A6C0+4)+0x1C)`, NOT `0x1000201C`, which caused the v1.2.1 real-3DS boot crash). Anything that depends on emulator-only state is an antipattern. Checklist: docs/REAL_HARDWARE_RULES.md**
 - headless testing only unless you want a human test
 - **WAYLAND LAUNCH RULE**: NEVER launch emulator with OpenGL on Wayland. Before ANY human-play launch: set `graphics_api=2` (Vulkan) + `graphics_api\default=false` in qt-config.ini, use `QT_QPA_PLATFORM=wayland`. OpenGL shared context DOES NOT WORK on Wayland/KDE.
 - **AUDIO: ALWAYS use `SDL_AUDIODRIVER=dummy` AND set `volume=0` + `volume\default=false` in `~/.config/azahar-emu/qt-config.ini` before ANY emulator launch. The config resets itself so check EVERY time.**
