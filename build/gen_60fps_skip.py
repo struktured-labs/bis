@@ -22,9 +22,20 @@ is allowed (the event system sets the allow flag; the >>R icon shows):
   Nothing is jumped over: every script command still runs in order, so flags,
   party, positions, music and map loads are produced by the game itself.
 
-Battle FPS counter: the game's second top-screen present call
-(v1.0 0x287F94 / v1.2 0x2880C8, same nngx framebuffer setter) also goes
-through the counter cave.
+FPS counter VSync redraw (battle fix): every top-screen present goes through
+the one hooked setter call (v1.0 0x105758 / v1.2 0x1057A0; the only other
+setter call, 0x287F94 / 0x2880C8, is always the bottom screen 0x401). nngx
+applies a buffer swap only once the GPU command list is done, so when the GPU
+is busy (battles) the GPU's display transfer can land in the front buffer
+after the counter was drawn into it at present time and erase it on hardware
+(Azahar runs command lists synchronously, so it never shows this). The
+present-time draw is kept, and the counter cave additionally records the
+buffers the game handed to the setter (current + previous, with the VSync
+count at which each was last presented). The game's own top-screen VSync
+callback then redraws the two digits into those buffers, only while the
+counter is on and only for buffers presented within the last 3 (current) /
+6 (previous) VSyncs, and flushes them with the game's own GSP FlushDataCache
+wrapper, as the present-time draw does.
 """
 import hashlib, os, struct, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,13 +45,110 @@ import gen_60fps_ff as ff  # noqa: E402
 BASE = ff.BASE
 SKIP = {
     "v10": dict(ffc=0x31EFD4, rchk1=0x31F028, spd=0x31F074, rchk2=0x31F14C,
-                msg_bl=0x20EF10, msg_fn=0x132834, fb2_call=0x287F94),
+                msg_bl=0x20EF10, msg_fn=0x132834, bot_call=0x287F94),
     "v12": dict(ffc=0x31F108, rchk1=0x31F15C, spd=0x31F1A8, rchk2=0x31F280,
-                msg_bl=0x20EEE8, msg_fn=0x132804, fb2_call=0x2880C8),
+                msg_bl=0x20EEE8, msg_fn=0x132804, bot_call=0x2880C8),
 }
 FF_SPEED_GLOBAL = 0x413C80          # game's fast-forward scale (2.0), same VA in 1.0 and 1.2
 TURBO = 0x40800000                  # 4.0f
 SKIP_MAGIC = 0x534B5031             # 'SKP1' at STATE+0x2C
+VMAGIC = 0x46425631                 # 'FBV1' at STATE+0x50: present-record valid
+VSD_CAVE = 0x389F40                 # end-of-.text padding after the toggle cave (zero, < 0x38A000)
+TEXT_MAPPED_END = 0x38A000
+# counter box moves to the top-right corner: the top LCD scans the frame from the
+# left edge (x=0) to the right, so a VSync-time redraw at the right edge lands
+# well before the scan reaches it.
+BOX_X_RIGHT = 400 - ff.BOX_W - 2    # 373
+# present record (STATE+): 0x30 stride bytes, 0x34 cur L, 0x38 cur R, 0x3C prev L,
+# 0x40 prev R, 0x44 bytes/pixel, 0x48 VSync count cur, 0x4C VSync count prev
+REC_OLD = """    ldr   r3, [sp, #12]
+    mul   r7, r3, r6
+    ldr   r8, [sp, #4]
+    bl    draw_buf
+"""
+REC_NEW = f"""    ldr   r3, [sp, #12]
+    mul   r7, r3, r6
+    ldr   r8, [sp, #4]
+    ldr   r0, [r4, #0x50]
+    ldr   r1, =0x{VMAGIC:x}
+    cmp   r0, r1
+    movne r0, #0
+    strne r0, [r4, #0x34]
+    strne r0, [r4, #0x38]
+    strne r0, [r4, #0x3C]
+    strne r0, [r4, #0x40]
+    strne r1, [r4, #0x50]
+    ldr   r0, [r4, #0x34]
+    cmp   r0, r8
+    ldrne r1, [r4, #0x38]
+    strne r0, [r4, #0x3C]
+    strne r1, [r4, #0x40]
+    ldrne r1, [r4, #0x48]
+    strne r1, [r4, #0x4C]
+    ldr   r1, [sp, #8]
+    str   r7, [r4, #0x30]
+    str   r6, [r4, #0x44]
+    str   r1, [r4, #0x38]
+    str   r8, [r4, #0x34]
+    ldr   r1, [r4, #4]
+    str   r1, [r4, #0x48]
+    bl    draw_buf
+"""
+
+
+def vsd_src(v, draw_buf):
+    # replaces the counter cave's VSync entry: same +1 VSync count for 0x400,
+    # then the redraw, then the callback's own first instruction
+    return f"""
+vs_draw:
+    push  {{r0-r12, lr}}
+    cmp   r1, #0x400
+    bne   vd_out
+    ldr   r4, =0x{S:x}
+    ldr   r2, [r4, #4]
+    add   r2, r2, #1
+    str   r2, [r4, #4]
+    ldr   r3, [r4]
+    ldr   r5, =0x{ff.MAGIC:x}
+    cmp   r3, r5
+    bne   vd_out
+    ldr   r3, [r4, #24]
+    cmp   r3, #0
+    beq   vd_out
+    ldr   r3, [r4, #0x50]
+    ldr   r5, =0x{VMAGIC:x}
+    cmp   r3, r5
+    bne   vd_out
+    ldr   r3, [r4, #0x48]
+    sub   r3, r2, r3
+    cmp   r3, #3
+    bhi   vd_out
+    ldr   r6, [r4, #0x44]
+    ldr   r7, [r4, #0x30]
+    ldr   r5, [r4, #0x34]
+    mov   r8, r5
+    bl    #0x{draw_buf:x}
+    ldr   r8, [r4, #0x38]
+    cmp   r8, r5
+    blne  #0x{draw_buf:x}
+    ldr   r3, [r4, #0x4C]
+    sub   r3, r2, r3
+    cmp   r3, #6
+    bhi   vd_out
+    ldr   r9, [r4, #0x3C]
+    cmp   r9, r5
+    beq   vd_out
+    mov   r8, r9
+    bl    #0x{draw_buf:x}
+    ldr   r8, [r4, #0x40]
+    cmp   r8, r9
+    blne  #0x{draw_buf:x}
+vd_out:
+    pop   {{r0-r12, lr}}
+    push  {{r4, lr}}
+    b     #0x{v['cb_vsync'] + 4:x}
+.ltorg
+"""
 S = ff.STATE
 ENTRIES = ("cave_ffc", "rs_r3", "rs_r1", "spd", "cave_msg")
 
@@ -185,12 +293,29 @@ def b_instr(src, dst, link):
     return struct.pack("<I", (0xEB if link else 0xEA) << 24 | off)
 
 
-def build(vname, default_on):
+def build(vname, default_on, vsync_only=False):
     v, s = ff.VERSIONS[vname], SKIP[vname]
     code = open(v["code_bin"], "rb").read()
     word = lambda va: struct.unpack_from("<I", code, va - BASE)[0]
     recs = dict(ff.parse_ips(ff.build(vname, True, default_on=default_on)))
-    counter = recs[ff.FPS_CAVE - BASE]
+    # counter cave with the present record added (re-assembled from the same source)
+    src = ff.fps_cave_src(v, default_on)
+    assert src.count(REC_OLD) == 1
+    src = src.replace(REC_OLD, REC_NEW)
+    xs = {ff.BOX_X: BOX_X_RIGHT, ff.BOX_X + 2: BOX_X_RIGHT + 2, ff.BOX_X + 2 + 4 * ff.SCALE: BOX_X_RIGHT + 2 + 4 * ff.SCALE}
+    for reg, old in (("r0", ff.BOX_X), ("r9", ff.BOX_X + 2), ("r9", ff.BOX_X + 2 + 4 * ff.SCALE)):
+        a = f"    mov   {reg}, #{old}\n"
+        assert a in src, a
+        src = src.replace(a, f"    ldr   {reg}, =0x{xs[old]:x}\n")
+    assert BOX_X_RIGHT + ff.BOX_W <= 400
+    if vsync_only:  # diagnostic only: no present-time draw, VSync redraw alone
+        src = src.replace("    bl    draw_buf\n", "    nop\n")
+    counter = ff.asm(src, ff.FPS_CAVE)
+    assert counter[32:36] == bytes.fromhex("ff5f2de9")
+    db = counter.find(bytes.fromhex("304e2de9"), 32)  # draw_buf: first PUSH {r4,r5,r9-r11,lr} after cave_fb
+    assert db > 0 and counter[db + 4:db + 8] == bytes.fromhex("000058e3"), "draw_buf entry (cmp r8,#0)"
+    draw_buf = ff.FPS_CAVE + db
+    recs[ff.FPS_CAVE - BASE] = counter
     # hook-site byte checks against the original code.bin
     assert word(s["ffc"]) == 0xE92D47F0, "FF controller entry PUSH {r4-r10,lr}"
     assert word(s["ffc"] + 0xC) == 0xE5D00006, "FF controller: LDRB r0,[r0,#6]"
@@ -202,8 +327,10 @@ def build(vname, default_on):
     assert lw >> 12 == 0xE59F0 and word(s["spd"] - 8 + 8 + (lw & 0xFFF)) == FF_SPEED_GLOBAL, "FF speed literal"
     assert bl_target(code, s["msg_bl"]) == s["msg_fn"]
     assert word(s["msg_bl"] - 4) == 0xE1A00005, "MOV r0,r5 before msg-window update"
-    assert bl_target(code, s["fb2_call"]) == v["fb_set"], "second top-screen present call"
-    for va in (s["ffc"], s["rchk1"], s["spd"], s["rchk2"], s["msg_bl"], s["fb2_call"]):
+    # the only other setter call is the bottom screen (0x401) in the two-screen swap: not hooked
+    assert bl_target(code, s["bot_call"]) == v["fb_set"]
+    assert word(v["cb_vsync"]) == 0xE92D4010 and word(v["cb_vsync"] + 4) == 0xE3510B01
+    for va in (s["ffc"], s["rchk1"], s["spd"], s["rchk2"], s["msg_bl"]):
         assert va - BASE not in recs, hex(va)
 
     cave = (ff.FPS_CAVE + len(counter) + 0x1F) & ~0x1F
@@ -226,8 +353,12 @@ def build(vname, default_on):
     recs[s["rchk2"] - BASE] = b_instr(s["rchk2"], cave + L["rs_r1"], True)
     recs[s["spd"] - BASE] = b_instr(s["spd"], cave + L["spd"], True)
     recs[s["msg_bl"] - BASE] = b_instr(s["msg_bl"], cave + L["cave_msg"], True)
-    recs[s["fb2_call"] - BASE] = b_instr(s["fb2_call"], ff.FPS_CAVE + 32, True)
-    assert ff.STATE + 0x30 <= ff.DATA_END_MAPPED
+    vsd = ff.asm(vsd_src(v, draw_buf), VSD_CAVE)
+    assert VSD_CAVE >= ff.TOGGLE_CAVE_FOFF + BASE + len(recs[ff.TOGGLE_CAVE_FOFF]) and VSD_CAVE + len(vsd) <= TEXT_MAPPED_END, f"vsd {len(vsd):#x}"
+    assert code[VSD_CAVE - BASE:TEXT_MAPPED_END - BASE] == bytes(TEXT_MAPPED_END - VSD_CAVE), "vsd cave not zero padding"
+    recs[VSD_CAVE - BASE] = vsd
+    recs[v["cb_vsync"] - BASE] = b_instr(v["cb_vsync"], VSD_CAVE, False)
+    assert ff.STATE + 0x54 <= ff.DATA_END_MAPPED
     return ff.make_ips(list(recs.items())), cave, len(blob), L
 
 
@@ -235,8 +366,8 @@ def main():
     out = os.path.join(ff.ROOT, "patches", "skip")
     os.makedirs(out, exist_ok=True)
     for vname in ("v10", "v12"):
-        for suf, on in (("skip", False), ("skip_fpson", True)):
-            data, cave, n, L = build(vname, on)
+        for suf, on, vo in (("skip", False, False), ("skip_fpson", True, False), ("diag_vsynconly_fpson", True, True)):
+            data, cave, n, L = build(vname, on, vo)
             name = f"60fps_{vname}_{suf}.ips"
             open(os.path.join(out, name), "wb").write(data)
             print(f"{name:28s} {len(data):5d} B sha256 {hashlib.sha256(data).hexdigest()}  cave {cave:#x}+{n:#x}")
