@@ -162,3 +162,49 @@ diag build).
   timing-sensitive script waits behave as under stock R FF at 30fps.
 * A cutscene that sets FF allowed during an input-required tutorial would
   auto-advance plain pages (never choices); none seen.
+
+## Update 2026-11-26: tap-START true skip, speed-persist fix, pipe/warp test
+
+### Controls (now)
+- **Hold START** during a fast-forwardable cutscene: the existing ~4x turbo speed-up (unchanged).
+- **Tap START** (released within 20 FF-controller ticks) during such a cutscene: latches a **skip to scene end**.
+  While latched, the field task's logic (`vtbl[0x18]` calc, v1.0 0x306F08 / v1.2 0x30703C,
+  found by prologue signature + vtable-slot 0x3E4B54 assert) runs up to 16 ticks per displayed frame,
+  with turbo scale and the message auto-advance active. So the script runs to its end through its own
+  commands, and every flag is set the same way as watching it.
+  Between ticks it re-checks: latch still set, the scene still allows FF (ffc+5), not disabled (ffc+6),
+  and no choice window open (window flag 4). Choice prompts and battles are never answered or skipped.
+  The latch clears as soon as the scene stops allowing FF (scene end).
+- L = 30 fps hold, L+SELECT counter toggle and R behave as before.
+
+### Fix: speed-up persisting after a scene (HW report on 2fc06c42)
+- Cause: on the skip→0 edge with START still held, the patch forced FF state=1, which bypassed the stock
+  turn-off path. That path is what resets the time scale (main+0x1a48, *(main+0x574)+0x7c) to 1.0.
+- Fix: re-toggle only while the scene still allows FF and FF is still wanted. When the scene ends, the stock
+  turn-off runs and the scale returns to 1.0.
+- Test: hold START through the scene end into free control (trial8 mode H). Afterwards scale=1.0 and step=1,
+  both while START is still held and after release.
+
+### Pipe / warp transitions (HW softlock report)
+- The skip/speed-up acts only while the script engine sets "FF allowed" (ffc+5). Map transitions and
+  non-cutscene scripts never set it, so START does nothing there.
+- Emulator test (v1.0, `60fps_v10_skip_fpson.ips`, stock Azahar headless): load save → Toad Square pipe
+  map → warp to Arm Center, then START either not pressed (N), held throughout (H, also DLY=1.0 variant), or tapped (T).
+  In all cases the FF controller kept ticking every sample: allow=0, latch=0, skip=0, scale=1.0, step=1.
+  The warp completed, and afterwards M&L walk and re-enter the pipe normally. See `img_skip/pipe/`.
+  Limit: tested with the pipe-map warp. No physical in-field pipe was reachable from the test saves.
+
+### Tap-skip results (stock Azahar, headless)
+| Scene | Watched | Hold START | Tap START | Story store vs watched |
+|---|---|---|---|---|
+| v1.0 opening | 296 s | 58 s | ~10 s | identical except RTC date/time stamps (0x3fcbdc/0x3fceac) |
+| v1.2 opening | — | — | ~8 s | identical except RTC stamps + one heap pointer |
+| v1.0 Dark Bowser pre-battle | 117 s | 22 s | ≤4 s | identical except RTC stamp; stops at the battle command menu |
+
+### Known limits
+- After tap-skipping the opening, the bottom-screen minimap stays blank until the next room change (cosmetic;
+  state identical).
+- Skip works only where the game itself allows fast-forward (scenes that show the >>R prompt).
+- On real hardware, 16 logic ticks per frame may run slower than in the emulator. The skip still completes;
+  it just takes longer.
+- START in free field still opens the stock pause menu (stock behaviour).

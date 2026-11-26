@@ -46,10 +46,10 @@ BASE = ff.BASE
 SKIP = {
     "v10": dict(ffc=0x31EFD4, rchk1=0x31F028, spd=0x31F074, rchk2=0x31F14C,
                 msg_bl=0x20EF10, msg_fn=0x132834, bot_call=0x287F94,
-                calc_call=0x13DF54, field_calc=0x307354),
+                calc_call=0x13DF54, field_calc=0x306F08, field_vt=0x3E4B54),
     "v12": dict(ffc=0x31F108, rchk1=0x31F15C, spd=0x31F1A8, rchk2=0x31F280,
                 msg_bl=0x20EEE8, msg_fn=0x132804, bot_call=0x2880C8,
-                calc_call=0x13DF24, field_calc=0x307488),
+                calc_call=0x13DF24, field_calc=0x30703C, field_vt=0x3E4B54),
 }
 FF_SPEED_GLOBAL = 0x413C80          # game's fast-forward scale (2.0), same VA in 1.0 and 1.2
 TURBO = 0x40800000                  # 4.0f
@@ -439,8 +439,9 @@ def build(vname, default_on, vsync_only=False):
 
     # TaskBase frame: ldr r0,[r4]; ldr r1,[r0,#0x18]; mov r0,r4; blx r1  (scene logic step)
     assert word(s["calc_call"] - 12) == 0xE5940000 and word(s["calc_call"] - 8) == 0xE5901018 and word(s["calc_call"] - 4) == 0xE1A00004 and word(s["calc_call"]) == 0xE12FFF31, "TaskBase calc call"
-    # field scene logic step: push {r4-r6,lr}; mov r4,r0; sub sp,#0x10; add r0,r0,#0x1ac0; bl ffc
-    assert code[s["field_calc"] - BASE:s["field_calc"] - BASE + 16] == bytes.fromhex("70402de90040a0e110d04de26b0d80e2") and bl_target(code, s["field_calc"] + 16) == s["ffc"], "field calc"
+    # field scene task logic step (its vtable slot +0x18), same prologue in 1.0 and 1.2
+    assert code[s["field_calc"] - BASE:s["field_calc"] - BASE + 32] == bytes.fromhex("f04f2de90070a0e1e80a9fed048b2deda4d04de294008de2e38a9fede48adfed"), "field calc prologue"
+    assert word(s["field_vt"]) == s["field_calc"], "field task vtable slot"
     assert s["calc_call"] - BASE not in recs
     cave = SKIP_CAVE
     parts, cur = [], None
