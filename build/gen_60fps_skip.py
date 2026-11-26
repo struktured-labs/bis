@@ -45,13 +45,19 @@ import gen_60fps_ff as ff  # noqa: E402
 BASE = ff.BASE
 SKIP = {
     "v10": dict(ffc=0x31EFD4, rchk1=0x31F028, spd=0x31F074, rchk2=0x31F14C,
-                msg_bl=0x20EF10, msg_fn=0x132834, bot_call=0x287F94),
+                msg_bl=0x20EF10, msg_fn=0x132834, bot_call=0x287F94,
+                calc_call=0x13DF54, field_calc=0x307354),
     "v12": dict(ffc=0x31F108, rchk1=0x31F15C, spd=0x31F1A8, rchk2=0x31F280,
-                msg_bl=0x20EEE8, msg_fn=0x132804, bot_call=0x2880C8),
+                msg_bl=0x20EEE8, msg_fn=0x132804, bot_call=0x2880C8,
+                calc_call=0x13DF24, field_calc=0x307488),
 }
 FF_SPEED_GLOBAL = 0x413C80          # game's fast-forward scale (2.0), same VA in 1.0 and 1.2
 TURBO = 0x40800000                  # 4.0f
-SKIP_MAGIC = 0x534B5031             # 'SKP1' at STATE+0x2C
+SKIP_MAGIC = 0x534B5032             # 'SKP2' at STATE+0x2C
+TAP_TICKS = 20                      # START released before 20 controller ticks (~1/3 s) = tap
+CALC_TICKS = 16                     # field logic steps per displayed frame while a tap-skip is latched
+SKIP_CAVE = 0x389240                # end-of-.text zero padding (v1.2 .text ends 0x389218, v1.0 0x3890E8)
+SKIP_CAVE_END = 0x389A00            # counter cave starts here
 VMAGIC = 0x46425631                 # 'FBV1' at STATE+0x50: present-record valid
 VSD_CAVE = 0x389F40                 # end-of-.text padding after the toggle cave (zero, < 0x38A000)
 TEXT_MAPPED_END = 0x38A000
@@ -150,13 +156,13 @@ vd_out:
 .ltorg
 """
 S = ff.STATE
-ENTRIES = ("cave_ffc", "rs_r3", "rs_r1", "spd", "cave_msg")
+ENTRIES = ("cave_ffc", "rs_r3", "rs_r1", "spd", "cave_msg", "cave_calc")
 
 
 def skip_src(s):
     return f"""
 cave_ffc:
-    push  {{r0-r5, r12, lr}}
+    push  {{r0-r7, r12, lr}}
     ldr   r4, =0x{S:x}
     ldr   r1, [r4, #0x2C]
     ldr   r2, =0x{SKIP_MAGIC:x}
@@ -168,57 +174,97 @@ cave_ffc:
     str   r1, [r4, #0x20]
     str   r1, [r4, #0x24]
     str   r1, [r4, #0x28]
+    str   r1, [r4, #0x58]
+    str   r1, [r4, #0x5C]
 ffc_go:
-    mov   r5, #0
+    mov   r6, #0
     mov   r3, #0
     ldr   r1, [r0]
     cmp   r1, #0
-    beq   ffc_store
+    beq   ffc_gated
     add   r2, r1, #0x1000
     ldr   r2, [r2, #0xB00]
     cmp   r2, #0
-    beq   ffc_store
+    beq   ffc_gated
     ldr   r3, [r2]
     ldrb  r12, [r0, #5]
     cmp   r12, #0
-    beq   ffc_store
+    beq   ffc_gated
     ldrb  r12, [r0, #6]
     cmp   r12, #0
-    bne   ffc_store
+    moveq r6, #1
+ffc_gated:
+    ldr   r5, [r4, #0x58]
+    ldr   r7, [r4, #0x5C]
+    cmp   r6, #0
+    moveq r5, #0
+    moveq r7, #0
+    beq   ffc_tapdone
     tst   r3, #8
-    movne r5, #1
-ffc_store:
-    ldr   r2, [r4, #0x20]
-    str   r5, [r4, #0x20]
-    str   r5, [r4, #0x1C]
-    str   r5, [r4, #0x24]
-    mov   r12, #0
+    beq   ffc_rel
+    cmp   r7, #255
+    addlo r7, r7, #1
+    b     ffc_tapdone
+ffc_rel:
+    cmp   r7, #0
+    beq   ffc_tapdone
+    cmp   r7, #{TAP_TICKS}
+    movlo r5, #1
+    mov   r7, #0
+ffc_tapdone:
+    str   r5, [r4, #0x58]
+    str   r7, [r4, #0x5C]
+    mov   r1, #0
+    cmp   r6, #0
+    beq   ffc_sk
+    tst   r3, #8
+    movne r1, #1
     cmp   r5, #0
-    beq   ffc_t
+    movne r1, #1
+ffc_sk:
+    ldr   r2, [r4, #0x20]
+    str   r1, [r4, #0x20]
+    str   r1, [r4, #0x1C]
+    str   r1, [r4, #0x24]
+    mov   r12, #0
+    cmp   r1, #0
+    beq   ffc_tset
     tst   r3, #0x200
     moveq r12, #1
-ffc_t:
+ffc_tset:
     str   r12, [r4, #0x28]
-    cmp   r2, r5
+    cmp   r2, r1
+    beq   ffc_out
+    cmp   r6, #0
     beq   ffc_out
     ldrb  r12, [r0, #4]
     cmp   r12, #0
     bne   ffc_out
-    tst   r3, #0x108
-    movne r12, #1
-    strbne r12, [r0, #4]
+    cmp   r1, #0
+    bne   ffc_retog
+    tst   r3, #0x100
+    beq   ffc_out
+ffc_retog:
+    mov   r12, #1
+    strb  r12, [r0, #4]
 ffc_out:
-    pop   {{r0-r5, r12, lr}}
+    pop   {{r0-r7, r12, lr}}
     push  {{r4-r10, lr}}
     b     #0x{s['ffc'] + 4:x}
 
 rs_r3:
     orr   r3, r1, r1, lsl #5
+    ldr   r1, =0x{S:x}
+    ldr   r1, [r1, #0x58]
+    orr   r3, r3, r1, lsl #8
     and   r3, r6, r3, lsr #8
     bx    lr
 
 rs_r1:
     orr   r1, r1, r1, lsl #5
+    ldr   r12, =0x{S:x}
+    ldr   r12, [r12, #0x58]
+    orr   r1, r1, r12, lsl #8
     and   r1, r6, r1, lsr #8
     bx    lr
 
@@ -279,6 +325,64 @@ m_done:
 m_out:
     pop   {{r0-r7, r12, lr}}
     b     #0x{s['msg_fn']:x}
+
+cave_calc:
+    push  {{r4-r8, lr}}
+    mov   r4, r0
+    mov   r5, r1
+    blx   r5
+    ldr   r1, =0x{s['field_calc']:x}
+    cmp   r5, r1
+    bne   c_out
+    ldr   r6, =0x{S:x}
+    ldr   r1, [r6, #0x2C]
+    ldr   r2, =0x{SKIP_MAGIC:x}
+    cmp   r1, r2
+    bne   c_out
+    mov   r7, #{CALC_TICKS - 1}
+c_loop:
+    ldr   r1, [r6, #0x58]
+    cmp   r1, #0
+    beq   c_out
+    add   r2, r4, #0x1000
+    ldrb  r1, [r2, #0xAC5]
+    cmp   r1, #0
+    beq   c_out
+    ldrb  r1, [r2, #0xAC6]
+    cmp   r1, #0
+    bne   c_out
+    ldr   r0, [r2, #0xB30]
+    cmp   r0, #0
+    beq   c_out
+    add   r1, r0, #0x48000
+    ldr   r8, [r1, #0x3C4]
+    cmp   r8, #0
+    beq   c_out
+    add   r1, r8, #0x42000
+    ldrb  r3, [r1, #0xADC]
+    mov   r2, #0
+c_win:
+    cmp   r2, r3
+    bge   c_tick
+    ldr   r1, =0x6D60
+    mla   r1, r2, r1, r8
+    add   r1, r1, #0x2D000
+    ldr   r12, [r1, #0xC44]
+    cmp   r12, #0
+    beq   c_wnext
+    ldr   r12, [r1, #0xD18]
+    tst   r12, #4
+    bne   c_out
+c_wnext:
+    add   r2, r2, #1
+    b     c_win
+c_tick:
+    mov   r0, r4
+    blx   r5
+    subs  r7, r7, #1
+    bne   c_loop
+c_out:
+    pop   {{r4-r8, pc}}
 """
 
 
@@ -333,7 +437,12 @@ def build(vname, default_on, vsync_only=False):
     for va in (s["ffc"], s["rchk1"], s["spd"], s["rchk2"], s["msg_bl"]):
         assert va - BASE not in recs, hex(va)
 
-    cave = (ff.FPS_CAVE + len(counter) + 0x1F) & ~0x1F
+    # TaskBase frame: ldr r0,[r4]; ldr r1,[r0,#0x18]; mov r0,r4; blx r1  (scene logic step)
+    assert word(s["calc_call"] - 12) == 0xE5940000 and word(s["calc_call"] - 8) == 0xE5901018 and word(s["calc_call"] - 4) == 0xE1A00004 and word(s["calc_call"]) == 0xE12FFF31, "TaskBase calc call"
+    # field scene logic step: push {r4-r6,lr}; mov r4,r0; sub sp,#0x10; add r0,r0,#0x1ac0; bl ffc
+    assert code[s["field_calc"] - BASE:s["field_calc"] - BASE + 16] == bytes.fromhex("70402de90040a0e110d04de26b0d80e2") and bl_target(code, s["field_calc"] + 16) == s["ffc"], "field calc"
+    assert s["calc_call"] - BASE not in recs
+    cave = SKIP_CAVE
     parts, cur = [], None
     for line in skip_src(s).strip().splitlines():
         t = line.strip()
@@ -345,7 +454,8 @@ def build(vname, default_on, vsync_only=False):
         L[name] = len(blob)
         blob += ff.asm("\n".join(lines) + "\n.ltorg\n", cave + len(blob))
         assert len(blob) % 4 == 0
-    assert cave + len(blob) <= ff.FPS_CAVE_END, f"skip cave too big {len(blob):#x}"
+    assert cave + len(blob) <= SKIP_CAVE_END, f"skip cave too big {len(blob):#x}"
+    assert v["text_end"] <= SKIP_CAVE
     assert code[cave - BASE:cave - BASE + len(blob)] == bytes(len(blob)), "cave not zero padding"
     recs[cave - BASE] = blob
     recs[s["ffc"] - BASE] = b_instr(s["ffc"], cave + L["cave_ffc"], False)
@@ -353,12 +463,13 @@ def build(vname, default_on, vsync_only=False):
     recs[s["rchk2"] - BASE] = b_instr(s["rchk2"], cave + L["rs_r1"], True)
     recs[s["spd"] - BASE] = b_instr(s["spd"], cave + L["spd"], True)
     recs[s["msg_bl"] - BASE] = b_instr(s["msg_bl"], cave + L["cave_msg"], True)
+    recs[s["calc_call"] - BASE] = b_instr(s["calc_call"], cave + L["cave_calc"], True)
     vsd = ff.asm(vsd_src(v, draw_buf), VSD_CAVE)
     assert VSD_CAVE >= ff.TOGGLE_CAVE_FOFF + BASE + len(recs[ff.TOGGLE_CAVE_FOFF]) and VSD_CAVE + len(vsd) <= TEXT_MAPPED_END, f"vsd {len(vsd):#x}"
     assert code[VSD_CAVE - BASE:TEXT_MAPPED_END - BASE] == bytes(TEXT_MAPPED_END - VSD_CAVE), "vsd cave not zero padding"
     recs[VSD_CAVE - BASE] = vsd
     recs[v["cb_vsync"] - BASE] = b_instr(v["cb_vsync"], VSD_CAVE, False)
-    assert ff.STATE + 0x54 <= ff.DATA_END_MAPPED
+    assert ff.STATE + 0x60 <= ff.DATA_END_MAPPED
     return ff.make_ips(list(recs.items())), cave, len(blob), L
 
 
