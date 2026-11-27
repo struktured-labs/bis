@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.4 (2026-11-27): cutscene skip, stock R fast-forward at 60fps, optional FPS counter
+
+- **R** is no longer a 30fps hold. It is the game's own cutscene fast-forward, and it now runs at 60fps.
+- **Hold L** for 30fps (moved over from R).
+- **FPS counter** drawn in the top-right of the top screen; **L+SELECT** toggles it. Off by default in this release build. Redrawn on VSync so it can stay visible in battles.
+- **Tap START** in a cutscene skips to the end of the scene. Every script command still runs, so story flags match watching. It only acts where fast-forward is allowed, and it stops at choice prompts and battles.
+- **Hold START** in a cutscene speeds it up to about 4–5x. Speed returns to normal when the scene ends. START is ignored during map warps (pipes).
+- Tested on a real New 3DS XL (USA game 1.0), in battle and out: cutscene skip, counter on/off, and the L 30fps hold. Video: `bis_v1.2.4_real_3ds_game1.0.mp4`. Game 1.2 is verified in stock Azahar 2126.2 only.
+- Known issue: after tap-skipping the opening, the bottom-screen minimap can stay blank until the next room change (cosmetic).
+- Legacy always-60fps patches are unchanged from v1.2.3.
+
+
 ## v1.2.3 (2026-11-24): tested on real 3DS hardware
 
 - **Tested on a real 3DS** (Luma3DS, USA game 1.0): the game 1.0 R-toggle patch

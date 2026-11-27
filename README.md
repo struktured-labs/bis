@@ -1,24 +1,23 @@
 # 60 FPS Patch - Mario & Luigi: Bowser's Inside Story + Bowser Jr.'s Journey (3DS)
 
-**Double your framerate from 30 FPS to 60 FPS.** The recommended build is an IPS patch with a hold-R-for-30fps toggle.
+**Double your framerate from 30 FPS to 60 FPS.** The recommended build is an IPS patch with cutscene skip, stock R fast-forward at 60fps, and a hold-L-for-30fps toggle.
 
-> **Latest: [v1.2.3](https://github.com/struktured-labs/bis/releases/tag/v1.2.3), tested on real 3DS hardware.**
-> The v1.2.3 R-toggle patch (game 1.0) boots and runs on a real 3DS with no crash
-> ([video](https://github.com/struktured-labs/bis/releases/download/v1.2.3/bis_v1.2.3_real_3ds_game1.0.mp4),
-> [test notes](docs/HW_TEST_2026-11-24.md)). The 60fps / hold-R-for-30fps toggle is verified in Azahar.
-> Game 1.2 has not been run on real hardware yet.
+> **Latest: [v1.2.4](https://github.com/struktured-labs/bis/releases/tag/v1.2.4).**
+> Tested on a real New 3DS XL (USA game 1.0), in battle and out: cutscene skip, counter on/off, and the L 30fps hold
+> ([video](https://github.com/struktured-labs/bis/releases/download/v1.2.4/bis_v1.2.4_real_3ds_game1.0.mp4)).
+> Game 1.2 is verified in stock Azahar only, and has not been run on real hardware yet.
 >
 > **Pick the patch that matches your game version.** Title screen shows "Ver. 1.2" (FBI lists the update title) = game 1.2; no label (FBI shows Version 0 and no update title) = game 1.0.
-> **The wrong one crashes at boot.** Download [`bis_60fps_v1.2.3_usa.zip`](https://github.com/struktured-labs/bis/releases/tag/v1.2.3) from the release and read its README.txt.
+> **The wrong one crashes at boot.** Download [`bis_60fps_v1.2.4_usa.zip`](https://github.com/struktured-labs/bis/releases/tag/v1.2.4) from the release and read its README.txt.
 
-![v1.2.3 on a real 3DS, game 1.0: first battle](docs/img/bis_v1.2.3_real_3ds_game1.0_still.jpg)
+![v1.2.4 on a real New 3DS XL, game 1.0](docs/img/bis_v1.2.4_real_3ds_game1.0_still.jpg)
 
 | | |
 |---|---|
 | **Game** | Mario & Luigi: Bowser's Inside Story + Bowser Jr.'s Journey |
 | **Region** | USA |
 | **Title ID** | 00040000001D1400 |
-| **Patch Size** | 133 bytes (game 1.0) / 151 bytes (game 1.2) |
+| **Patch Size** | 2040 bytes (game 1.0) / 2058 bytes (game 1.2) |
 | **Format** | IPS (code.bin patch) |
 
 ---
@@ -33,7 +32,7 @@ Unlike cheat codes that continuously overwrite memory every 50ms, this patch mod
 
 ## Installation
 
-**Use the files in `bis_60fps_v1.2.3_usa.zip` from the [v1.2.3 release](https://github.com/struktured-labs/bis/releases/tag/v1.2.3).** Check your game version first: "Ver. 1.2" on the title screen, or FBI listing the update title, means game 1.2 (`game_v1.2/60fps_v12_full_r.ips`). No label, or FBI showing Version 0 and no update title, means game 1.0 (`game_v1.0/60fps_v10_full_r.ips`). **The wrong file crashes at boot.**
+**Use the files in `bis_60fps_v1.2.4_usa.zip` from the [v1.2.4 release](https://github.com/struktured-labs/bis/releases/tag/v1.2.4).** Check your game version first: "Ver. 1.2" on the title screen, or FBI listing the update title, means game 1.2 (`game_v1.2/60fps_v12_skip.ips`). No label, or FBI showing Version 0 and no update title, means game 1.0 (`game_v1.0/60fps_v10_skip.ips`). **The wrong file crashes at boot.**
 
 ### Luma3DS (Real 3DS / 2DS Hardware)
 
@@ -47,7 +46,7 @@ Unlike cheat codes that continuously overwrite memory every 50ms, this patch mod
    No SD swap needed: you can send the file over Wi-Fi with an FTP homebrew
    app such as ftpd.
 2. Hold SELECT while powering on, turn on "Enable game patching", and save.
-3. Launch the game. It runs at 60fps; hold R for 30fps.
+3. Launch the game. It runs at 60fps; hold L for 30fps. Tap START in a cutscene to skip, or hold START to speed it up. L+SELECT toggles the FPS counter (off by default). R is the game's own fast-forward, now at 60fps.
 
 ### Azahar / Lime3DS Emulator
 
@@ -87,8 +86,8 @@ Unlike cheat codes that continuously overwrite memory every 50ms, this patch mod
 
 | Platform | Status |
 |----------|--------|
-| Real 3DS (Luma3DS), v1.2.3 R-toggle, game 1.0 | Tested: boots and runs, no crash (2026-11-24) |
-| Real 3DS (Luma3DS), v1.2.3 R-toggle, game 1.2 | Not yet tested on hardware |
+| Real 3DS (Luma3DS), v1.2.4, game 1.0 | Tested on a New 3DS XL, in battle and out: cutscene skip, counter on/off, and the L 30fps hold (2026-11-27) |
+| Real 3DS (Luma3DS), v1.2.4, game 1.2 | Not yet tested on hardware (emulator-verified only) |
 | Azahar / Lime3DS (Vulkan) | Tested |
 | Azahar / Lime3DS (OpenGL) | Should work |
 | Citra | Should work |
